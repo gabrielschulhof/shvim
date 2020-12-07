@@ -28,4 +28,18 @@ typedef struct _TkMenuDescription {
 static TkMenuDescription TK_MENU_SEP =
   { NULL, TK_NO_HOT_KEY, { NULL } };
 
+typedef struct _TkApp TkApp;
+
+G_BEGIN_DECLS
+
+TkApp* tk_app_new(void);
+
+void tk_app_run(TkApp* app);
+
+void tk_app_quit(TkApp* app);
+
+void tk_app_destroy(TkApp* app);
+
+G_END_DECLS
+
 #endif  // TK_INCLUDE_TK_H

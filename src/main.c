@@ -1,5 +1,8 @@
 #include <tk/tk.h>
 
+#define NCURSES_WIDECHAR 1
+#include <ncursesw/ncurses.h>
+
 static TkMenuDescription file_new_menu =
   { "&New", { TK_CTRL, 'n' }, { NULL } };
 
@@ -73,5 +76,11 @@ static TkMenuDescription menu = {
 };
 
 int main(int argc, char** argv) {
+  TkApp* app = tk_app_new();
+
+  tk_app_run(app);
+
+  tk_app_destroy(app);
+
   return 0;
 }
