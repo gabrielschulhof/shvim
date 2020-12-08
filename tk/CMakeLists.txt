@@ -1,4 +1,4 @@
-add_library(tk tk.c)
+add_library(tk src/tkapp.c)
 
 find_package(PkgConfig REQUIRED)
 

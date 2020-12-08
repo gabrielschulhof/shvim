@@ -76,7 +76,7 @@ static TkMenuDescription menu = {
 };
 
 int main(int argc, char** argv) {
-  TkApp* app = tk_app_new();
+  TkApp* app = tk_app_new("Editor");
 
   tk_app_run(app);
 

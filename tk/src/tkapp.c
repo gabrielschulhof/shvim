@@ -4,9 +4,10 @@ struct _TkApp {
   GMainLoop* loop;
 };
 
-TkApp* tk_app_new() {
+TkApp* tk_app_new(const char* name) {
   TkApp* ret = g_new(TkApp, 1);
   ret->loop = g_main_loop_new(NULL, FALSE);
+  g_set_application_name(name);
 	initscr();
 	typeahead(-1);
 	noecho();
