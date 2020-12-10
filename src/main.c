@@ -1,86 +1,78 @@
-#include <tk/tk.h>
+#include <stdlib.h>
 
 #define NCURSES_WIDECHAR 1
 #include <ncursesw/ncurses.h>
 
-static TkMenuDescription file_new_menu =
-  { "&New", { TK_CTRL, 'n' }, { NULL } };
+#include <glib.h>
 
-static TkMenuDescription file_open_menu =
-  { "&Open", { TK_CTRL, 'o' }, { NULL } };
-
-static TkMenuDescription file_save_menu =
-  { "&Save", { TK_CTRL, 's' }, { NULL } };
-
-static TkMenuDescription file_save_as_menu =
-  { "Save &As", { TK_CTRL | TK_SHIFT, 's' }, { NULL } };
-
-static TkMenuDescription file_close_menu =
-  { "&Close", { TK_CTRL, 'w' }, { NULL } };
-
-static TkMenuDescription file_exit_menu =
-  { "E&xit", { TK_CTRL, 'q' }, { NULL } };
-
-static TkMenuDescription file_menu = {
-  "&File", { TK_ALT, 'f' }, {
-    &file_new_menu,
-    &file_open_menu,
-    &TK_MENU_SEP,
-    &file_save_menu,
-    &file_save_as_menu,
-    &TK_MENU_SEP,
-    &file_close_menu,
-    &file_exit_menu,
-    NULL
+#define ASSERT(app, cond)                    \
+  if (!(cond)) {                             \
+    endwin();                                \
+    fprintf(stderr, "(" #cond ") failed\n"); \
+    fflush(stderr);                          \
+    abort();                                 \
   }
-};
 
-static TkMenuDescription edit_undo_menu =
-  { "&Undo", { TK_CTRL, 'z' }, { NULL } };
+typedef struct {
+  WINDOW* screen;
+  WINDOW* menu;
+  WINDOW* tabs;
+} App;
 
-static TkMenuDescription edit_redo_menu =
-  { "&Redo", { TK_CTRL, 'y' }, { NULL } };
+static void enter_menu_mode(App* app) {
+  int ch;
 
-static TkMenuDescription edit_cut_menu =
-  { "Cu&t", { TK_CTRL, 'x' }, { NULL } };
-
-static TkMenuDescription edit_copy_menu =
-  { "&Copy", { TK_CTRL, 'c' }, { NULL } };
-
-static TkMenuDescription edit_paste_menu =
-  { "&Paste", { TK_CTRL, 'v' }, { NULL } };
-
-static TkMenuDescription edit_select_all_menu =
-  { "Select &All", { TK_CTRL, 'a' }, { NULL } };
-
-static TkMenuDescription edit_menu = {
-  "&Edit", { TK_ALT, 'e' }, {
-    &edit_undo_menu,
-    &edit_redo_menu,
-    &TK_MENU_SEP,
-    &edit_cut_menu,
-    &edit_copy_menu,
-    &edit_paste_menu,
-    &TK_MENU_SEP,
-    &edit_select_all_menu,
-    NULL
+  while (TRUE) {
+    ch = wgetch(app->screen);
+    if (ch == 27) break;
   }
-};
-
-static TkMenuDescription menu = {
-  NULL, { TK_ALT, 'm' }, {
-    &file_menu,
-    &edit_menu,
-    NULL
-  }
-};
+}
 
 int main(int argc, char** argv) {
-  TkApp* app = tk_app_new("Editor");
+  App the_app;
+  App* app = &the_app;
 
-  tk_app_run(app);
+  g_set_application_name("Editor");
+	initscr();
+	typeahead(-1);
+	noecho();
+  refresh();
+  raw();
 
-  tk_app_destroy(app);
+  int maxy, maxx, ch;
+
+  app->screen = newwin(0, 0, 0, 0);
+  ASSERT(app, app->screen != NULL);
+  getmaxyx(app->screen, maxy, maxx);
+  keypad(app->screen, TRUE);
+
+  app->menu = subwin(app->screen, 1, maxx, 0, 0);
+  ASSERT(app, app->menu != NULL);
+  mvwaddch(app->menu, 0, 0, 'F' | A_UNDERLINE);
+  wprintw(app->menu, "ile ");
+  waddch(app->menu, 'E' | A_UNDERLINE);
+  wprintw(app->menu, "dit");
+
+  app->tabs = subwin(app->screen, 1, maxx, 1, 0);
+  ASSERT(app, app->tabs != NULL);
+
+  wrefresh(app->screen);
+
+  while (TRUE) {
+    ch = wgetch(app->screen);
+    wprintw(app->screen, "%d", ch);
+
+    // Ctrl+Q
+    if (ch == 17) break;
+
+    // ESC
+    if (ch == 27) enter_menu_mode(app);
+  }
+
+  delwin(app->menu);
+  delwin(app->tabs);
+  delwin(app->screen);
+  endwin();
 
   return 0;
 }

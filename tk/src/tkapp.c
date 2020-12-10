@@ -12,6 +12,7 @@ TkApp* tk_app_new(const char* name) {
 	typeahead(-1);
 	noecho();
   refresh();
+  raw();
   return ret;
 }
 
@@ -20,6 +21,7 @@ void tk_app_run(TkApp* app) {
 }
 
 void tk_app_quit(TkApp* app) {
+  endwin();
   g_main_loop_quit(app->loop);
 }
 
