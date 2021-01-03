@@ -1,78 +1,123 @@
+#define _GNU_SOURCE
+#include <string.h>
+#include <termios.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+
+#include <signal.h>
+#include <poll.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <pty.h>
 
-#define NCURSES_WIDECHAR 1
-#include <ncursesw/ncurses.h>
+#define BUF_SIZE 256
 
-#include <glib.h>
+static struct termios orig_termios;
 
-#define ASSERT(app, cond)                    \
-  if (!(cond)) {                             \
-    endwin();                                \
-    fprintf(stderr, "(" #cond ") failed\n"); \
-    fflush(stderr);                          \
-    abort();                                 \
-  }
+static void reset_tty() {
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+}
+
+static int make_tty_raw() {
+  int result;
+
+  result = tcgetattr(STDIN_FILENO, &orig_termios);
+  if (result == -1) return result;
+
+  result = atexit(reset_tty);
+  if (result == -1) return result;
+
+  struct termios raw = orig_termios;
+
+  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  raw.c_oflag &= ~(OPOST);
+  raw.c_cflag |= (CS8);
+  raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+
+  return tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+}
 
 typedef struct {
-  WINDOW* screen;
-  WINDOW* menu;
-  WINDOW* tabs;
-} App;
+  char buf[BUF_SIZE];
+  size_t offset;
+} ReadBuf;
 
-static void enter_menu_mode(App* app) {
-  int ch;
+static void process_stdin(ReadBuf* stdin_buf) {
+  if (stdin_buf->offset == 1 && stdin_buf->buf[0] == 3) {
+    exit(1);
+  }
+  for (size_t idx = 0; idx < stdin_buf->offset; idx++) {
+    fprintf(stderr, "%02x%s", stdin_buf->buf[idx],
+      ((idx == stdin_buf->offset - 1) ? " " : ""));
+  }
+  fprintf(stderr, "\r\n");
+  stdin_buf->offset = 0;
+}
 
-  while (TRUE) {
-    ch = wgetch(app->screen);
-    if (ch == 27) break;
+static int drain_stdin(ReadBuf* stdin_buf) {
+  int result;
+  int stdin_avail = -1;
+  ssize_t stdin_read = -1;
+
+  result = ioctl(0, FIONREAD, &stdin_avail);
+  if (result == -1) return result;
+
+  while (stdin_avail > 0) {
+    stdin_read = read(0, &stdin_buf->buf[stdin_buf->offset],
+      BUF_SIZE - stdin_buf->offset);
+    if (stdin_read < 0) return stdin_read;
+    stdin_avail -= stdin_read;
+    stdin_buf->offset += stdin_read;
+    process_stdin(stdin_buf);
   }
 }
 
-int main(int argc, char** argv) {
-  App the_app;
-  App* app = &the_app;
+int fork_vi(const char* fname) {
+  struct winsize ws;
+  int result;
+  pid_t child_pid;
+  int master_fd;
 
-  g_set_application_name("Editor");
-	initscr();
-	typeahead(-1);
-	noecho();
-  refresh();
-  raw();
+  result = ioctl(0, TIOCGWINSZ, &ws);
+  if (result == -1) return result;
 
-  int maxy, maxx, ch;
+  child_pid = forkpty(&master_fd, NULL, NULL, &ws);
+  if (child_pid == -1) return -1;
 
-  app->screen = newwin(0, 0, 0, 0);
-  ASSERT(app, app->screen != NULL);
-  getmaxyx(app->screen, maxy, maxx);
-  keypad(app->screen, TRUE);
-
-  app->menu = subwin(app->screen, 1, maxx, 0, 0);
-  ASSERT(app, app->menu != NULL);
-  mvwaddch(app->menu, 0, 0, 'F' | A_UNDERLINE);
-  wprintw(app->menu, "ile ");
-  waddch(app->menu, 'E' | A_UNDERLINE);
-  wprintw(app->menu, "dit");
-
-  app->tabs = subwin(app->screen, 1, maxx, 1, 0);
-  ASSERT(app, app->tabs != NULL);
-
-  wrefresh(app->screen);
-
-  while (TRUE) {
-    ch = wgetch(app->screen);
-    wprintw(app->screen, "%d", ch);
-
-    // Ctrl+Q
-    if (ch == 17) break;
-
-    // ESC
-    if (ch == 27) enter_menu_mode(app);
+  if (child_pid > 0) {
+    return master_fd;
   }
 
-  delwin(app->menu);
-  delwin(app->tabs);
-  delwin(app->screen);
-  endwin();
+  execvp("vim", "");
+}
+
+int main(int argc, char** argv) {
+  ReadBuf stdin_buf = { "", 0 };
+
+  if (argc < 2) {
+    fprintf(stderr, "Need a file name\n");
+    return 1;
+  }
+
+  if (make_tty_raw() == -1) return 1;
+
+  struct pollfd fds[2] = {
+    { 0, POLLIN, 0 },
+    { -1, POLLIN, 0 },
+  };
+
+  fds[1].fd = fork_vi(argv[1]);
+  if (fds[1].fd == -1) {
+    fprintf(stderr, "Failed to spawn vi\n");
+    return 2;
+  }
+
+  while (ppoll(fds, sizeof(fds) / sizeof(*fds), NULL, NULL) >= 0) {
+    if (fds[0].revents != 0) {
+      fds[0].revents = 0;
+      drain_stdin(&stdin_buf);
+    }
+  }
 
   return 0;
 }
