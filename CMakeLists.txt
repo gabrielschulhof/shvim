@@ -6,3 +6,4 @@ find_package(PkgConfig REQUIRED)
 include(FindCurses)
 
 add_executable(editor src/main.c)
+target_link_libraries(editor PUBLIC util)
