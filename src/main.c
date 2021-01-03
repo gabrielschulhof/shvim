@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <stdarg.h>
+#include <stdbool.h>
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
@@ -52,9 +53,109 @@ typedef struct {
   size_t offset;
 } ReadBuf;
 
+static struct {
+  bool selecting;
+} vi_state = {
+  false
+};
+
+typedef struct {
+  char* name;
+  bool shift;
+  bool ctrl;
+  bool meta;
+} keystroke;
+
+#define IS_UDLREH(buf, idx)                                    \
+  (((buf)->buf[(idx)] >= 0x41 && (buf)->buf[(idx)] <= 0x44) || \
+    (buf)->buf[(idx)] == 0x46 ||                               \
+    (buf)->buf[(idx)] == 0x48)
+
+#define UDLREH_TO_NAME(ch)           \
+      ((ch) == 0x41 ? "up" :         \
+      (ch) == 0x42 ? "down" :        \
+      (ch) == 0x43 ? "right" :       \
+      (ch) == 0x44 ? "left" :        \
+      (ch) == 0x46 ? "end" : "home")
+
+static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
+  if (buf->offset == 6 &&
+      buf->buf[0] == 0x1b &&
+      (buf->buf[4] == 0x32 || buf->buf[4] == 0x36) &&
+      IS_UDLREH(buf, 5)) {
+    // [Ctrl +] Shift + <arrow|home|end>
+    result->name = UDLREH_TO_NAME(buf->buf[5]);
+    result->shift = (buf->buf[4] == 0x32);
+    result->ctrl = (buf->buf[4] == 0x36);
+    result->meta = false;
+    return true;
+  } else if (buf->offset == 3 &&
+      buf->buf[0] == 0x1b &&
+      buf->buf[1] == 0x4f &&
+      IS_UDLREH(buf, 2)) {
+    // <arrow|home|end>
+    result->name = UDLREH_TO_NAME(buf->buf[2]);
+    result->shift = false;
+    result->ctrl = false;
+    result->meta = false;
+    return true;
+  }
+
+  return false;
+}
+
 static void process_stdin(ReadBuf* stdin_buf, int vi_fd) {
-  write(vi_fd, stdin_buf->buf, stdin_buf->offset);
-  stdin_buf->offset = 0;
+  bool passThrough = true;
+  for (int idx = 0; idx < stdin_buf->offset; idx++)
+    debug("%02x%s", stdin_buf->buf[idx], ((idx == stdin_buf->offset - 1) ? "" : " "));
+  debug("\n");
+
+  keystroke k;
+  if (interpret_keystroke(stdin_buf, &k)) {
+    if (!strcmp(k.name, "up") ||
+        !strcmp(k.name, "down") ||
+        !strcmp(k.name, "left") ||
+        !strcmp(k.name, "right") ||
+        !strcmp(k.name, "home") ||
+        !strcmp(k.name, "end")) {
+      const char* direction =
+        !strcmp(k.name, "up") ? "k" :
+        !strcmp(k.name, "down") ? "j" :
+        !strcmp(k.name, "left") ? "h" :
+        !strcmp(k.name, "right") ? "l" :
+        !strcmp(k.name, "home") ? "0" :
+        !strcmp(k.name, "end") ? "$" : NULL;
+      if (k.shift == true) {
+        passThrough = false;
+        if (!vi_state.selecting) {
+          vi_state.selecting = true;
+          // Do we need the l before mbv for columns > 0?
+          write(vi_fd, "\x1bmbv", 4);
+        }
+        if (k.ctrl) {
+          if (!strcmp(k.name, "down")) write(vi_fd, "}", 1);
+          else if (!strcmp(k.name, "up")) write(vi_fd, "}", 1);
+          else if (!strcmp(k.name, "left")) write(vi_fd, "b", 1);
+          else if (!strcmp(k.name, "right")) write(vi_fd, "w", 1);
+          else if (!strcmp(k.name, "home")) write(vi_fd, "1G0", 3);
+          else if (!strcmp(k.name, "end")) write(vi_fd, "G$", 2);
+        } else {
+          write(vi_fd, direction, 1);
+        }
+      } else if (vi_state.selecting) {
+        debug("Stop selecting\n");
+        // Stop selecting, stop absorbing keystrokes, and return to insert mode.
+        vi_state.selecting = false;
+        write(vi_fd, "\x1bi", 2);
+        passThrough = true;
+      }
+    }
+  }
+
+  if (passThrough) {
+    write(vi_fd, stdin_buf->buf, stdin_buf->offset);
+    stdin_buf->offset = 0;
+  }
 }
 
 static int drain_stdin(ReadBuf* stdin_buf, int vi_fd) {
@@ -92,7 +193,14 @@ int fork_vi(const char* fname) {
   }
 
   char* const argv[] = {
-    "-n", fname, NULL
+    "-n", "+star",
+    "-c", ":0",
+    "-c", ":set tabstop=2",
+    "-c", ":set expandtab",
+    "-c", ":set whichwrap+=<,>,[,]",
+    "-c", ":set selection=exclusive",
+    "-c", ":set nohlsearch",
+    fname, NULL
   };
 
   execvp("vim", argv);
