@@ -55,12 +55,13 @@ static const char* ctrl_sequences[] = {
 
 static int vi_drain(ViState* vi);
 
+#define DEBUG(s)
 static void debug(const char* fmt, ...) {
-  va_list va;
-  va_start(va, fmt);
-  vfprintf(stderr, fmt, va);
-  fflush(stderr);
-  va_end(va);
+  DEBUG(va_list va);
+  DEBUG(va_start(va, fmt));
+  DEBUG(vfprintf(stderr, fmt, va));
+  DEBUG(fflush(stderr));
+  DEBUG(va_end(va));
 }
 
 static void reset_tty() {
@@ -98,6 +99,8 @@ static int make_tty_raw() {
       (ch) == 0x44 ? "left" :        \
       (ch) == 0x46 ? "end" : "home")
 
+// Produce a keystroke from an input escape sequence. This is not an exhaustive
+// interpreter.
 static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
   if (buf->offset == 6 &&
       buf->buf[0] == 0x1b &&
@@ -146,7 +149,9 @@ static int get_cursor_pos(int* row, int* col) {
     if (response[idx] == 'R') break;
   }
 
-  // This assumes the tty does indeed produce the correct sequence.
+  // This assumes the tty does indeed produce the correct sequence and that the
+  // terminal does not have so many rows/columns that the resulting decimal
+  // representation of the numbers doesn't fit in the buffer ;)
   *row = strtol(&response[2], &end, 10);
   end++;
   *col = strtol(end, NULL, 10);
@@ -375,12 +380,12 @@ int main(int argc, char** argv) {
 
   ReadBuf stdin_buf = { "", 0 };
 
-  freopen("/home/nix/editor/log", "a", stderr);
+  DEBUG(freopen("/home/nix/editor/log", "a", stderr));
 
   debug("\nStarting up\n");
 
   if (argc < 2) {
-    debug("Need a file name\n");
+    printf("Need a file name\n");
     return 1;
   }
 
@@ -388,7 +393,7 @@ int main(int argc, char** argv) {
 
   fds[1].fd = vi_fork(&vi_state, argv[1]);
   if (fds[1].fd == -1) {
-    debug("Failed to spawn vi\n");
+    printf("Failed to spawn vi\r\n");
     return 2;
   }
 
