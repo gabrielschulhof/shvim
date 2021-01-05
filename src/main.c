@@ -27,7 +27,8 @@ typedef struct {
   int fd;
   pid_t pid;
   bool selecting;
-  bool getting_cursor_pos;
+  bool searching;
+  bool full_line_selection;
 } ViState;
 
 #define VI_STATE_INIT \
@@ -35,7 +36,8 @@ typedef struct {
     -1,               \
     -1,               \
     false,            \
-    false             \
+    false,            \
+    false,            \
   }
 
 typedef struct {
@@ -44,6 +46,12 @@ typedef struct {
   bool ctrl;
   bool meta;
 } keystroke;
+
+static const char* ctrl_sequences[] = {
+  "`", "a", "b", "c", "d", "e", "f", "g", "h", "i", "return", "k", "l", "enter", "n",
+  "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+  "escape", NULL, NULL, "~",
+};
 
 static int vi_drain(ViState* vi);
 
@@ -109,6 +117,15 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
     result->name = UDLREH_TO_NAME(buf->buf[2]);
     result->shift = false;
     result->ctrl = false;
+    result->meta = false;
+    return true;
+  } else if (buf->offset == 1 &&
+      buf->buf[0] < 0x1e &&
+      ctrl_sequences[buf->buf[0]] != NULL) {
+    result->name = ctrl_sequences[buf->buf[0]];
+    result->shift = false;
+    result->ctrl =
+        (!(buf->buf[0] == 0x1b || buf->buf[0] == 0x0a || buf->buf[0] == 0x0d));
     result->meta = false;
     return true;
   }
@@ -198,6 +215,79 @@ static void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf) {
         passThrough = true;
       }
     }
+
+    if (!strcmp(k.name, "enter") && vi->searching) {
+      passThrough = false;
+      vi->searching = false;
+      vi->selecting = true;
+      write(vi->fd, "\rmbgn", 5);
+    }
+
+    if (k.ctrl == true && k.shift == false) {
+      if (!strcmp(k.name, "a")) {
+        passThrough = false;
+        vi->selecting = true;
+        // Gotta write these separately, because "\x1b1" is not what we mean.
+        write(vi->fd, "\x1b", 1);
+        write(vi->fd, "1G0mbvG$", 8);
+      } else if (!strcmp(k.name, "c")) {
+        passThrough = false;
+        if (vi->selecting) {
+          write(vi->fd, "m`ybv``", 7);
+          get_cursor_pos(&row, &col);
+          vi->full_line_selection = (col == 1);
+        }
+      } else if (!strcmp(k.name, "f")) {
+        passThrough = false;
+        vi->searching = true;
+        write(vi->fd, "\x1bl/", 3);
+      } else if (!strcmp(k.name, "g")) {
+        passThrough = false;
+        vi->selecting = true;
+        write(vi->fd, "\x1bnmbgn", 6);
+      } else if (!strcmp(k.name, "q")) {
+        passThrough = false;
+        write(vi->fd, "\x1b:q\r", 4);
+      } else if (!strcmp(k.name, "s")) {
+        passThrough = false;
+        write(vi->fd, "\x1b:w\ri", 5);
+        // We need to move to the right by one after saving to maintain cursor
+        // position, but we cannot do so before entering insert mode because
+        // outside of insert mode it refuses to move past the last character.
+        get_cursor_pos(&row, &col);
+        if (col > 1) write(vi->fd, "\x1bOC", 3);
+      } else if (!strcmp(k.name, "v")) {
+        passThrough = false;
+        if (vi->selecting) {
+          vi->selecting = false;
+          write(vi->fd, "\"_di", 4);
+        }
+        // For some reason we have to move to the right by one before pasting
+        // ^o^
+        write(vi->fd, "\x1bOC\x1bP`]", 7);
+        if (!vi->full_line_selection) {
+          // We also have to move past what we just pasted, unless it's a full
+          // line ^o^
+          write(vi->fd, "\x1bOC", 3);
+        }
+        write(vi->fd, "i", 1);
+      } else if (!strcmp(k.name, "x")) {
+        passThrough = false;
+        if (vi->selecting) {
+          write(vi->fd, "di", 2);
+          vi->selecting = false;
+        }
+      } else if (!strcmp(k.name, "z")) {
+        passThrough = false;
+        write(vi->fd, "\x1bui", 3);
+      } else if (!strcmp(k.name, "down")) {
+        passThrough = false;
+        write(vi->fd, "\x1b}i", 3);
+      } else if (!strcmp(k.name, "up")) {
+        passThrough = false;
+        write(vi->fd, "\x1b{i", 3);
+      }
+    }
   }
 
   if (passThrough) {
@@ -260,11 +350,8 @@ static int vi_drain(ViState* vi) {
   result = ioctl(vi->fd, FIONREAD, &vi_avail);
   if (result == -1) return result;
 
-  if (vi_avail == 0) {
-    if (vi->getting_cursor_pos) return 0;
-    // EOF from vi, meaning it exited.
-    exit(0);
-  }
+  // EOF from vi, meaning it exited.
+  if (vi_avail == 0) exit(0);
 
   while(vi_avail > 0) {
     vi_read = read(vi->fd, buf, BUF_SIZE);
