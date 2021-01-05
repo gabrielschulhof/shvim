@@ -5,6 +5,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <signal.h>
 
 #include <signal.h>
@@ -16,6 +17,35 @@
 #define BUF_SIZE 256
 
 static struct termios orig_termios;
+
+typedef struct {
+  char buf[BUF_SIZE];
+  size_t offset;
+} ReadBuf;
+
+typedef struct {
+  int fd;
+  pid_t pid;
+  bool selecting;
+  bool getting_cursor_pos;
+} ViState;
+
+#define VI_STATE_INIT \
+  {                   \
+    -1,               \
+    -1,               \
+    false,            \
+    false             \
+  }
+
+typedef struct {
+  char* name;
+  bool shift;
+  bool ctrl;
+  bool meta;
+} keystroke;
+
+static int vi_drain(ViState* vi);
 
 static void debug(const char* fmt, ...) {
   va_list va;
@@ -48,24 +78,6 @@ static int make_tty_raw() {
   return tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
-typedef struct {
-  char buf[BUF_SIZE];
-  size_t offset;
-} ReadBuf;
-
-static struct {
-  bool selecting;
-} vi_state = {
-  false
-};
-
-typedef struct {
-  char* name;
-  bool shift;
-  bool ctrl;
-  bool meta;
-} keystroke;
-
 #define IS_UDLREH(buf, idx)                                    \
   (((buf)->buf[(idx)] >= 0x41 && (buf)->buf[(idx)] <= 0x44) || \
     (buf)->buf[(idx)] == 0x46 ||                               \
@@ -81,12 +93,12 @@ typedef struct {
 static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
   if (buf->offset == 6 &&
       buf->buf[0] == 0x1b &&
-      (buf->buf[4] == 0x32 || buf->buf[4] == 0x36) &&
+      (buf->buf[4] == 0x32 || buf->buf[4] == 0x35 || buf->buf[4] == 0x36) &&
       IS_UDLREH(buf, 5)) {
     // [Ctrl +] Shift + <arrow|home|end>
     result->name = UDLREH_TO_NAME(buf->buf[5]);
-    result->shift = (buf->buf[4] == 0x32);
-    result->ctrl = (buf->buf[4] == 0x36);
+    result->shift = (buf->buf[4] != 0x35);
+    result->ctrl = (buf->buf[4] == 0x36 || buf->buf[4] == 0x35);
     result->meta = false;
     return true;
   } else if (buf->offset == 3 &&
@@ -104,14 +116,43 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
   return false;
 }
 
-static void process_stdin(ReadBuf* stdin_buf, int vi_fd) {
+static int get_cursor_pos(int* row, int* col) {
+  char response[256] = "";
+  char* end;
+  int idx;
+
+  write(1, "\x1b[6n", 4);
+
+  // We expect <ESC>[??;???R back, so let's keep reading until we get a letter R.
+  for (idx = 0; idx < 256; idx++) {
+    read(0, &response[idx], 1);
+    if (response[idx] == 'R') break;
+  }
+
+  // This assumes the tty does indeed produce the correct sequence.
+  *row = strtol(&response[2], &end, 10);
+  end++;
+  *col = strtol(end, NULL, 10);
+  return 0;
+}
+
+static void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf) {
   bool passThrough = true;
+  keystroke k;
+  int row, col;
+
   for (int idx = 0; idx < stdin_buf->offset; idx++)
-    debug("%02x%s", stdin_buf->buf[idx], ((idx == stdin_buf->offset - 1) ? "" : " "));
+    debug("%02x%s",
+        stdin_buf->buf[idx],
+        ((idx == stdin_buf->offset - 1) ? "" : " "));
   debug("\n");
 
-  keystroke k;
   if (interpret_keystroke(stdin_buf, &k)) {
+    debug("keystroke: %s%s%s%s\n",
+      k.ctrl ? "Ctrl+" : "",
+      k.meta ? "Alt+" : "",
+      k.shift ? "Shift+" : "",
+      k.name);
     if (!strcmp(k.name, "up") ||
         !strcmp(k.name, "down") ||
         !strcmp(k.name, "left") ||
@@ -119,46 +160,53 @@ static void process_stdin(ReadBuf* stdin_buf, int vi_fd) {
         !strcmp(k.name, "home") ||
         !strcmp(k.name, "end")) {
       const char* direction =
-        !strcmp(k.name, "up") ? "k" :
-        !strcmp(k.name, "down") ? "j" :
-        !strcmp(k.name, "left") ? "h" :
-        !strcmp(k.name, "right") ? "l" :
+        !strcmp(k.name, "up") ? "\x1bOA" :
+        !strcmp(k.name, "down") ? "\x1bOB" :
+        !strcmp(k.name, "right") ? "\x1bOC" :
+        !strcmp(k.name, "left") ? "\x1bOD" :
         !strcmp(k.name, "home") ? "0" :
         !strcmp(k.name, "end") ? "$" : NULL;
+      bool forwards =
+          (!strcmp(k.name, "down") ||
+          !strcmp(k.name, "right") ||
+          !strcmp(k.name, "end"));
       if (k.shift == true) {
         passThrough = false;
-        if (!vi_state.selecting) {
-          vi_state.selecting = true;
-          // Do we need the l before mbv for columns > 0?
-          write(vi_fd, "\x1bmbv", 4);
+        if (!vi->selecting) {
+          vi->selecting = true;
+          get_cursor_pos(&row, &col);
+          write(vi->fd, "\x1b", 1);
+          if (col > 1 && forwards) write(vi->fd, "\x1bOC", 3);
+          write (vi->fd, "mbv", 3);
         }
         if (k.ctrl) {
-          if (!strcmp(k.name, "down")) write(vi_fd, "}", 1);
-          else if (!strcmp(k.name, "up")) write(vi_fd, "}", 1);
-          else if (!strcmp(k.name, "left")) write(vi_fd, "b", 1);
-          else if (!strcmp(k.name, "right")) write(vi_fd, "w", 1);
-          else if (!strcmp(k.name, "home")) write(vi_fd, "1G0", 3);
-          else if (!strcmp(k.name, "end")) write(vi_fd, "G$", 2);
+          debug("Ctrl+Shift+%s\n", k.name);
+          if (!strcmp(k.name, "down")) write(vi->fd, "}", 1);
+          else if (!strcmp(k.name, "up")) write(vi->fd, "}", 1);
+          else if (!strcmp(k.name, "left")) write(vi->fd, "b", 1);
+          else if (!strcmp(k.name, "right")) write(vi->fd, "w", 1);
+          else if (!strcmp(k.name, "home")) write(vi->fd, "1G0", 3);
+          else if (!strcmp(k.name, "end")) write(vi->fd, "G$", 2);
         } else {
-          write(vi_fd, direction, 1);
+          write(vi->fd, direction, strlen(direction));
         }
-      } else if (vi_state.selecting) {
+      } else if (vi->selecting) {
         debug("Stop selecting\n");
         // Stop selecting, stop absorbing keystrokes, and return to insert mode.
-        vi_state.selecting = false;
-        write(vi_fd, "\x1bi", 2);
+        vi->selecting = false;
+        write(vi->fd, "\x1bi", 2);
         passThrough = true;
       }
     }
   }
 
   if (passThrough) {
-    write(vi_fd, stdin_buf->buf, stdin_buf->offset);
-    stdin_buf->offset = 0;
+    write(vi->fd, stdin_buf->buf, stdin_buf->offset);
   }
+  stdin_buf->offset = 0;
 }
 
-static int drain_stdin(ReadBuf* stdin_buf, int vi_fd) {
+static int vi_drain_stdin(ViState* vi, ReadBuf* stdin_buf) {
   int result;
   int stdin_avail = -1;
   ssize_t stdin_read = -1;
@@ -172,24 +220,22 @@ static int drain_stdin(ReadBuf* stdin_buf, int vi_fd) {
     if (stdin_read < 0) return stdin_read;
     stdin_avail -= stdin_read;
     stdin_buf->offset += stdin_read;
-    process_stdin(stdin_buf, vi_fd);
+    vi_process_stdin(vi, stdin_buf);
   }
 }
 
-int fork_vi(const char* fname) {
+int vi_fork(ViState* vi, const char* fname) {
   struct winsize ws;
   int result;
-  pid_t child_pid;
-  int master_fd;
 
   result = ioctl(0, TIOCGWINSZ, &ws);
   if (result == -1) return result;
 
-  child_pid = forkpty(&master_fd, NULL, NULL, &ws);
-  if (child_pid == -1) return -1;
+  vi->pid = forkpty(&vi->fd, NULL, NULL, &ws);
+  if (vi->pid == -1) return -1;
 
-  if (child_pid > 0) {
-    return master_fd;
+  if (vi->pid > 0) {
+    return vi->fd;
   }
 
   char* const argv[] = {
@@ -198,7 +244,6 @@ int fork_vi(const char* fname) {
     "-c", ":set tabstop=2",
     "-c", ":set expandtab",
     "-c", ":set whichwrap+=<,>,[,]",
-    "-c", ":set selection=exclusive",
     "-c", ":set nohlsearch",
     fname, NULL
   };
@@ -206,34 +251,46 @@ int fork_vi(const char* fname) {
   execvp("vim", argv);
 }
 
-static int drain_vi(int vi_fd) {
+static int vi_drain(ViState* vi) {
   char buf[BUF_SIZE] = "";
   int result;
   int vi_avail = -1;
   ssize_t vi_read = -1;
 
-  result = ioctl(vi_fd, FIONREAD, &vi_avail);
+  result = ioctl(vi->fd, FIONREAD, &vi_avail);
   if (result == -1) return result;
 
-  // EOF from vi, meaning it exited.
-  if (vi_avail == 0) exit(0);
+  if (vi_avail == 0) {
+    if (vi->getting_cursor_pos) return 0;
+    // EOF from vi, meaning it exited.
+    exit(0);
+  }
 
   while(vi_avail > 0) {
-    vi_read = read(vi_fd, buf, BUF_SIZE);
+    vi_read = read(vi->fd, buf, BUF_SIZE);
     if (vi_read < 0) return vi_read;
     if (write(1, buf, vi_read) < 0) {
       return -1;
     }
     vi_avail -= vi_read;
   }
+
+  return 0;
 }
 
 int main(int argc, char** argv) {
+  ViState vi_state = VI_STATE_INIT;
+
+  struct pollfd fds[2] = {
+    { 0, POLLIN, 0 },
+    { -1, POLLIN, 0 },
+  };
+
+  ReadBuf stdin_buf = { "", 0 };
+
   freopen("/home/nix/editor/log", "a", stderr);
 
   debug("\nStarting up\n");
-
-  ReadBuf stdin_buf = { "", 0 };
 
   if (argc < 2) {
     debug("Need a file name\n");
@@ -242,12 +299,7 @@ int main(int argc, char** argv) {
 
   if (make_tty_raw() == -1) return 1;
 
-  struct pollfd fds[2] = {
-    { 0, POLLIN, 0 },
-    { -1, POLLIN, 0 },
-  };
-
-  fds[1].fd = fork_vi(argv[1]);
+  fds[1].fd = vi_fork(&vi_state, argv[1]);
   if (fds[1].fd == -1) {
     debug("Failed to spawn vi\n");
     return 2;
@@ -256,10 +308,10 @@ int main(int argc, char** argv) {
   while (ppoll(fds, sizeof(fds) / sizeof(*fds), NULL, NULL) >= 0) {
     if (fds[0].revents != 0) {
       fds[0].revents = 0;
-      drain_stdin(&stdin_buf, fds[1].fd);
+      vi_drain_stdin(&vi_state, &stdin_buf);
     } else if (fds[1].revents != 0) {
       fds[1].revents = 0;
-      drain_vi(fds[1].fd);
+      vi_drain(&vi_state);
     }
   }
 
