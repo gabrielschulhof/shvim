@@ -226,11 +226,16 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
     }
   }
 
-  if (!strcmp(k->name, "home") && k->shift == true) {
-    keystroke shift_left = { "left", true, false, false };
-    vi_process_keystroke(vi, &shift_left);
-    passThrough = false;
-    write0(vi->fd, "0");
+  if (!strcmp(k->name, "home")) {
+    if (k->shift == true) {
+      passThrough = false;
+      keystroke shift_left = { "left", true, false, false };
+      vi_process_keystroke(vi, &shift_left);
+      write0(vi->fd, "0");
+    } else {
+      vi->selecting = false;
+      write0(vi->fd, "\x1bi");
+    }
   }
 
   if (!strcmp(k->name, "enter") && vi->searching) {
@@ -333,10 +338,13 @@ static void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf) {
     passThrough = vi_process_keystroke(vi, &k);
   }
 
+  debug("vi->full_line_selection: %s\n",
+      vi->full_line_selection ? "true" : "false");
+
   if (passThrough) {
     if (vi->selecting) {
       vi->selecting = false;
-      write0(vi->fd, "\"_di");
+      write0(vi->fd, "\"_di\x1bOC");
     }
     write(vi->fd, stdin_buf->buf, stdin_buf->offset);
   }
@@ -379,6 +387,7 @@ int vi_fork(ViState* vi, const char* fname) {
     "-n", "+star",
     "-c", ":0",
     "-c", ":set tabstop=2",
+    "-c", ":set list",
     "-c", ":set expandtab",
     "-c", ":set selection=exclusive",
     "-c", ":set whichwrap+=<,>,[,]",
