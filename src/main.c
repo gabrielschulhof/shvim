@@ -28,14 +28,12 @@ typedef struct {
   pid_t pid;
   bool selecting;
   bool searching;
-  bool full_line_selection;
 } ViState;
 
 #define VI_STATE_INIT \
   {                   \
     -1,               \
     -1,               \
-    false,            \
     false,            \
     false,            \
   }
@@ -58,7 +56,7 @@ static int vi_drain(ViState* vi);
 #define write0(fd, str) \
   write((fd), (str), strlen((str)))
 
-#define DEBUG(s)
+#define DEBUG(s) s
 static void debug(const char* fmt, ...) {
   DEBUG(va_list va);
   DEBUG(va_start(va, fmt));
@@ -174,9 +172,7 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
 
   if ((!strcmp(k->name, "delete") || !strcmp(k->name, "backspace")) &&
       k->shift == false && k->ctrl == false && vi->selecting) {
-    passThrough = false;
     vi->selecting = false;
-    write0(vi->fd, "\"_di");
   }
 
   if (!strcmp(k->name, "up") ||
@@ -196,26 +192,8 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
         !strcmp(k->name, "left") ||
         !strcmp(k->name, "end"));
     if (k->shift == true) {
-      passThrough = false;
       if (!vi->selecting) {
         vi->selecting = true;
-        get_cursor_pos(&row, &col);
-        write0(vi->fd, "\x1b");
-        if (col > 1 && needs_forwards) {
-          write0(vi->fd, "\x1bOC");
-        }
-        write (vi->fd, "mbv", 3);
-      }
-      if (k->ctrl) {
-        debug("Ctrl+Shift+%s\n", k->name);
-        if (!strcmp(k->name, "down")) write0(vi->fd, "}");
-        else if (!strcmp(k->name, "up")) write0(vi->fd, "}");
-        else if (!strcmp(k->name, "left")) write0(vi->fd, "b");
-        else if (!strcmp(k->name, "right")) write0(vi->fd, "w");
-        else if (!strcmp(k->name, "home")) write0(vi->fd, "1G0");
-        else if (!strcmp(k->name, "end")) write0(vi->fd, "G$");
-      } else {
-        write0(vi->fd, direction);
       }
     } else if (vi->selecting) {
       debug("Stop selecting\n");
@@ -228,10 +206,8 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
 
   if (!strcmp(k->name, "home")) {
     if (k->shift == true) {
-      passThrough = false;
       keystroke shift_left = { "left", true, false, false };
       vi_process_keystroke(vi, &shift_left);
-      write0(vi->fd, "0");
     } else {
       vi->selecting = false;
       write0(vi->fd, "\x1bi");
@@ -247,71 +223,35 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
 
   if (k->ctrl == true && k->shift == false) {
     if (!strcmp(k->name, "a")) {
-      passThrough = false;
       vi->selecting = true;
-      // Gotta write these separately, because "\x1b1" is not what we mean.
-      write0(vi->fd, "\x1b");
-      write0(vi->fd, "1G0mbvG$");
-    } else if (!strcmp(k->name, "c")) {
-      passThrough = false;
-      if (vi->selecting) {
-        write0(vi->fd, "m`y`bv``");
-        get_cursor_pos(&row, &col);
-        vi->full_line_selection = (col == 1);
-      }
     } else if (!strcmp(k->name, "f")) {
-      passThrough = false;
       vi->searching = true;
-      write0(vi->fd, "\x1bl/");
     } else if (!strcmp(k->name, "g")) {
-      passThrough = false;
       vi->selecting = true;
-      write0(vi->fd, "\x1bnmbgn");
     } else if (!strcmp(k->name, "q")) {
       passThrough = false;
       write0(vi->fd, "\x1b:q\r");
-    } else if (!strcmp(k->name, "s")) {
-      passThrough = false;
-      write0(vi->fd, "\x1b:w\ri");
-      // We need to move to the right by one after saving to maintain cursor
-      // position, but we cannot do so before entering insert mode because
-      // outside of insert mode it refuses to move past the last character.
-      get_cursor_pos(&row, &col);
-      if (col > 1) write0(vi->fd, "\x1bOC");
     } else if (!strcmp(k->name, "v")) {
       passThrough = false;
       if (vi->selecting) {
         vi->selecting = false;
         write0(vi->fd, "\"_di");
       }
-      // For some reason we have to move to the right by one before pasting
-      // ^o^
+      // For some reason we have to move to the right by one before pasting ^o^
       get_cursor_pos(&row, &col);
-      if (col > 1) {
-        write0(vi->fd, "\x1bOC");
-      }
+      if (col > 1) write0(vi->fd, "\x1bOC");
+
       write0(vi->fd, "\x1bP`]");
-      if (!vi->full_line_selection) {
-        // We also have to move past what we just pasted, unless it's a full
-        // line ^o^
-        write0(vi->fd, "\x1bOC");
-      }
+
+      // For some reason we have to move to the right by one after pasting ^o^
+      get_cursor_pos(&row, &col);
+      if (col > 1) write0(vi->fd, "\x1bOC");
+
       write0(vi->fd, "i");
     } else if (!strcmp(k->name, "x")) {
-      passThrough = false;
       if (vi->selecting) {
-        write0(vi->fd, "di");
         vi->selecting = false;
       }
-    } else if (!strcmp(k->name, "z")) {
-      passThrough = false;
-      write0(vi->fd, "\x1bui");
-    } else if (!strcmp(k->name, "down")) {
-      passThrough = false;
-      write0(vi->fd, "\x1b}i");
-    } else if (!strcmp(k->name, "up")) {
-      passThrough = false;
-      write0(vi->fd, "\x1b{i");
     }
   }
 
@@ -335,17 +275,12 @@ static void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf) {
       k.shift ? "Shift+" : "",
       k.name);
 
+    debug("vi->selecting: %s\n", vi->selecting ? "true" : "false");
+
     passThrough = vi_process_keystroke(vi, &k);
   }
 
-  debug("vi->full_line_selection: %s\n",
-      vi->full_line_selection ? "true" : "false");
-
   if (passThrough) {
-    if (vi->selecting) {
-      vi->selecting = false;
-      write0(vi->fd, "\"_di\x1bOC");
-    }
     write(vi->fd, stdin_buf->buf, stdin_buf->offset);
   }
   stdin_buf->offset = 0;
@@ -383,17 +318,7 @@ int vi_fork(ViState* vi, const char* fname) {
     return vi->fd;
   }
 
-  char* const argv[] = {
-    "-n", "+star",
-    "-c", ":0",
-    "-c", ":set tabstop=2",
-    "-c", ":set list",
-    "-c", ":set expandtab",
-    "-c", ":set selection=exclusive",
-    "-c", ":set whichwrap+=<,>,[,]",
-    "-c", ":set nohlsearch",
-    fname, NULL
-  };
+  char* const argv[] = { "-n", fname, NULL };
 
   execvp("vim", argv);
 }
