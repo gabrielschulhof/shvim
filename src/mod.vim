@@ -21,15 +21,18 @@ endfunction
 "  get character at cursor:
 "  :echo matchstr(getline('.'), '\%' . col('.') . 'c.')
 
-function! NSNextChar()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
+function! GetPosInfo()
+  return { 'first': (col('.') ==# 1), 'last': IsLastChar() }
+endfunction
 
-  if !isFirstChar
+function! NSNextChar()
+  let pos = GetPosInfo()
+
+  if !pos.first
     execute "normal! l"
   endif
 
-  if isLastChar && !isFirstChar
+  if pos.last && !pos.first
     execute "normal! mbvho"
   else
     execute "normal! mbvl"
@@ -37,12 +40,11 @@ function! NSNextChar()
 endfunction
 
 function! NSPrevChar()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
+  let pos = GetPosInfo()
 
-  if isLastChar
+  if pos.last
     execute "normal! mbvlo"
-  elseif !isFirstChar
+  elseif !pos.first
     execute "normal! lmbvh"
   else
     execute "normal! mbvh"
@@ -50,12 +52,11 @@ function! NSPrevChar()
 endfunction
 
 function! NSPrevWord()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
+  let pos = GetPosInfo()
 
-  if isFirstChar
+  if pos.first
     execute "normal! mbvb"
-  elseif isLastChar
+  elseif pos.last
     execute "normal! mbvlob"
   else
     execute "normal! lmbvb"
@@ -63,15 +64,14 @@ function! NSPrevWord()
 endfunction
 
 function! NSNextWord()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
+  let pos = GetPosInfo()
 
-  if !isFirstChar
+  if !pos.first
     execute "normal! l"
   endif
 
-  if isLastChar
-    if !isFirstChar
+  if pos.last
+    if !pos.first
       execute "normal! mbvhow"
     else
       execute "normal! mbvw"
@@ -82,15 +82,14 @@ function! NSNextWord()
 endfunction
 
 function! NSNextLine()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
+  let pos = GetPosInfo()
 
-  if isLastChar && !isFirstChar
+  if pos.last && !pos.first
     execute "normal! mbvjolo"
     if !IsLastChar()
       execute "normal! l"
     endif
-  elseif isFirstChar
+  elseif pos.first
     execute "normal! mbvj"
   else
     execute "normal! lmbvj"
@@ -98,20 +97,14 @@ function! NSNextLine()
 endfunction
 
 function! NSNextPar()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
-
-  if !isFirstChar
+  if !GetPosInfo().first
     execute "normal! l"
   endif
   execute "normal! mbv}"
 endfunction
 
 function! NSPrevLine()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
-
-  if isFirstChar
+  if GetPosInfo().first
     execute "normal! mbvk"
   else
     execute "normal! lmbvk"
@@ -119,10 +112,9 @@ function! NSPrevLine()
 endfunction
 
 function! NSPrevPar()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
+  let pos = GetPosInfo()
 
-  if isFirstChar && isLastChar
+  if pos.first && pos.last
     execute "normal! hmbvlo{"
   else
     execute "normal! lmbv{"
@@ -130,21 +122,17 @@ function! NSPrevPar()
 endfunction
 
 function! NSEnd()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
-
-  if !isFirstChar
+  if !GetPosInfo().first
     execute "normal! l"
   endif
   execute "normal! mbv$"
 endfunction
 
 function! NSHome()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
+  let pos = GetPosInfo()
 
-  if isLastChar
-    if !isFirstChar
+  if pos.last
+    if !pos.first
       execute "normal! mbvlo0"
     else
       execute "normal! mbv"
@@ -155,10 +143,7 @@ function! NSHome()
 endfunction
 
 function! NSEnd()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
-
-  if isFirstChar
+  if GetPosInfo().first
     execute "normal! mbv$"
   else
     execute "normal! lmbv$"
@@ -166,10 +151,7 @@ function! NSEnd()
 endfunction
 
 function! NSEndDoc()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
-
-  if isFirstChar
+  if GetPosInfo().first
     execute "normal! mbvG$"
   else
     execute "normal! lmbvG$"
@@ -177,10 +159,7 @@ function! NSEndDoc()
 endfunction
 
 function! NSHomeDoc()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
-
-  if !isFirstChar"
+  if !GetPosInfo().first
     execute "normal! l"
   endif
 
@@ -188,13 +167,12 @@ function! NSHomeDoc()
 endfunction
 
 function! NPaste()
-  let isFirstChar = (col('.') ==# 1)
-  let isLastChar = IsLastChar()
+  let pos = GetPosInfo()
 
-  if !isFirstChar && !isLastChar
+  if !pos.first && !pos.last
     execute "normal! l"
   endif
-  if isLastChar
+  if pos.last
     execute "normal! gp"
   else
     execute "normal! gP"
@@ -202,16 +180,11 @@ function! NPaste()
 endfunction
 
 function! NPasteOver()
-  let isLastChar = IsLastChar()
-  if isLastChar
+  if GetPosInfo().last
     execute "normal! gp"
   else
     execute "normal! gP"
   endif
-endfunction
-
-function! GoSomewhere()
-  execute "normal! $l"
 endfunction
 
 inoremap <S-right> <Esc>:call NSNextChar()<CR>
