@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <errno.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <string.h>
@@ -34,6 +35,8 @@ typedef struct {
   bool searching;
 } ViState;
 
+ViState* current_vi = NULL;
+
 #define VI_STATE_INIT \
   {                   \
     -1,               \
@@ -60,7 +63,7 @@ static int vi_drain(ViState* vi);
 #define write0(fd, str) \
   write((fd), (str), strlen((str)))
 
-#define DEBUG(s)
+#define DEBUG(s) s
 static void debug(const char* fmt, ...) {
   DEBUG(va_list va);
   DEBUG(va_start(va, fmt));
@@ -314,7 +317,10 @@ static int vi_drain(ViState* vi) {
   if (result == -1) return result;
 
   // EOF from vi, meaning it exited.
-  if (vi_avail == 0) exit(0);
+  if (vi_avail == 0) {
+    debug("EOF from vim, exiting\n");
+    exit(0);
+  }
 
   while(vi_avail > 0) {
     vi_read = read(vi->fd, buf, BUF_SIZE);
@@ -328,7 +334,21 @@ static int vi_drain(ViState* vi) {
   return 0;
 }
 
+static void handle_sigwinch(int signal) {
+  int result;
+  struct winsize ws;
+
+  debug("sigwinch\n");
+
+  result = ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
+  if (result == -1) exit(1);
+
+  result = ioctl(current_vi->fd, TIOCSWINSZ, &ws);
+  if (result == -1) exit(1);
+}
+
 int main(int argc, char** argv) {
+  int result;
   ViState vi_state = VI_STATE_INIT;
 
   struct pollfd fds[2] = {
@@ -338,7 +358,7 @@ int main(int argc, char** argv) {
 
   ReadBuf stdin_buf = { "", 0 };
 
-  DEBUG(freopen("/home/nix/editor/log", "a", stderr));
+  DEBUG(freopen("/home/nix/shvim/log", "a", stderr));
 
   debug("\nStarting up\n");
 
@@ -349,19 +369,32 @@ int main(int argc, char** argv) {
 
   if (make_tty_raw() == -1) return 1;
 
+  struct sigaction sa;
+  if (sigemptyset(&sa.sa_mask) == -1) return 1;
+  sa.sa_flags = 0;
+  sa.sa_handler = handle_sigwinch;
+  if (sigaction(SIGWINCH, &sa, NULL) == -1) return 1;
+
+  current_vi = &vi_state;
+
   fds[1].fd = vi_fork(&vi_state, argv[1], vimrc);
   if (fds[1].fd == -1) {
     printf("Failed to spawn vi\r\n");
     return 2;
   }
 
-  while (ppoll(fds, sizeof(fds) / sizeof(*fds), NULL, NULL) >= 0) {
-    if (fds[0].revents != 0) {
-      fds[0].revents = 0;
-      vi_drain_stdin(&vi_state, &stdin_buf);
-    } else if (fds[1].revents != 0) {
-      fds[1].revents = 0;
-      vi_drain(&vi_state);
+  while (true) {
+    result = ppoll(fds, sizeof(fds) / sizeof(*fds), NULL, NULL);
+    if (result >= 0) {
+      if (fds[0].revents != 0) {
+        fds[0].revents = 0;
+        vi_drain_stdin(&vi_state, &stdin_buf);
+      } else if (fds[1].revents != 0) {
+        fds[1].revents = 0;
+        vi_drain(&vi_state);
+      }
+    } else if (errno != EINTR) {
+      break;
     }
   }
 
