@@ -60,7 +60,7 @@ static int vi_drain(ViState* vi);
 #define write0(fd, str) \
   write((fd), (str), strlen((str)))
 
-#define DEBUG(s) s
+#define DEBUG(s)
 static void debug(const char* fmt, ...) {
   DEBUG(va_list va);
   DEBUG(va_start(va, fmt));

@@ -238,10 +238,6 @@ inoremap <C-f> <Esc>l/
 vnoremap <C-f> <Esc>l/
 vnoremap <C-g> <Esc>nmbgn
 
-" requires stty -ixon
-inoremap <C-s> <Esc>:w<CR>li
-inoremap <C-q> <Esc>:q<CR>
-
 inoremap <C-v> <C-o>:call NPaste()<CR>
 vnoremap <C-v> "_d:call NPasteOver()<CR>i
 vnoremap <C-x> di
