@@ -237,9 +237,11 @@ vnoremap <C-c> mbomey`bv`eo
 inoremap <C-f> <Esc>l/
 vnoremap <C-f> <Esc>l/
 vnoremap <C-g> <Esc>nmbgn
+inoremap <C-l> <Esc>:
 
 inoremap <C-v> <C-o>:call NPaste()<CR>
 vnoremap <C-v> "_d:call NPasteOver()<CR>i
 vnoremap <C-x> di
-inoremap <C-z> <Esc>ui
+inoremap <C-z> <C-o>u
 nnoremap <C-z> <Esc>ui
+inoremap <C-y> <C-o><C-r>

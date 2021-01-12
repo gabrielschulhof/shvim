@@ -33,6 +33,7 @@ typedef struct {
   pid_t pid;
   bool selecting;
   bool searching;
+  bool jumping
 } ViState;
 
 ViState* current_vi = NULL;
@@ -43,6 +44,7 @@ ViState* current_vi = NULL;
     -1,               \
     false,            \
     false,            \
+    false             \
   }
 
 typedef struct {
@@ -63,7 +65,7 @@ static int vi_drain(ViState* vi);
 #define write0(fd, str) \
   write((fd), (str), strlen((str)))
 
-#define DEBUG(s) s
+#define DEBUG(s)
 static void debug(const char* fmt, ...) {
   DEBUG(va_list va);
   DEBUG(va_start(va, fmt));
@@ -189,11 +191,17 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
     }
   }
 
-  if (!strcmp(k->name, "enter") && vi->searching) {
-    passThrough = false;
-    vi->searching = false;
-    vi->selecting = true;
-    write0(vi->fd, "\rmbgn");
+  if (!strcmp(k->name, "enter")) {
+    if (vi->searching) {
+      passThrough = false;
+      vi->searching = false;
+      vi->selecting = true;
+      write0(vi->fd, "\rmbgn");
+    } else if (vi->jumping) {
+      passThrough = false;
+      vi->jumping = false;
+      write0(vi->fd, "\ri");
+    }
   }
 
   if (k->ctrl == true && k->shift == false) {
@@ -201,20 +209,22 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
       vi->selecting = true;
     } else if (!strcmp(k->name, "f")) {
       vi->searching = true;
-    } else if (!strcmp(k->name, "v")) {
-      if (vi->searching) {
-        passThrough = false;
-        write0(vi->fd, "\x12");
-        write0(vi->fd, "0");
-      }
     } else if (!strcmp(k->name, "g")) {
       vi->selecting = true;
+    } else if (!strcmp(k->name, "l")) {
+      vi->jumping = true;
     } else if (!strcmp(k->name, "q")) {
       passThrough = false;
       write0(vi->fd, "\x1b:q\r");
     } else if (!strcmp(k->name, "s")) {
       passThrough = false;
       write0(vi->fd, "\x1b:w\rli");
+    } else if (!strcmp(k->name, "v")) {
+      if (vi->searching) {
+        passThrough = false;
+        write0(vi->fd, "\x12");
+        write0(vi->fd, "0");
+      }
     } else if (!strcmp(k->name, "x")) {
       if (vi->selecting) {
         vi->selecting = false;
