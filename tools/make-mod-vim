@@ -1,0 +1,13 @@
+#!/bin/bash
+
+SOURCE="$1"
+DEST="$2"
+
+echo "const char* vi_rc_string() { return" > "${DEST}"
+
+cat "${SOURCE}" | while read; do
+
+  echo "\"$(echo "${REPLY}" | sed 's/"/\\"/g')\\n\"" >> "${DEST}"
+done
+
+echo ";}" >> "${DEST}"

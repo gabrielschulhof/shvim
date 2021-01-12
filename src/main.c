@@ -18,6 +18,10 @@
 
 static struct termios orig_termios;
 
+static char vimrc[] = "/tmp/shvim.vimrc.XXXXXX";
+
+extern const char* vi_rc_string();
+
 typedef struct {
   char buf[BUF_SIZE];
   size_t offset;
@@ -56,7 +60,7 @@ static int vi_drain(ViState* vi);
 #define write0(fd, str) \
   write((fd), (str), strlen((str)))
 
-#define DEBUG(s) s
+#define DEBUG(s)
 static void debug(const char* fmt, ...) {
   DEBUG(va_list va);
   DEBUG(va_start(va, fmt));
@@ -65,8 +69,9 @@ static void debug(const char* fmt, ...) {
   DEBUG(va_end(va));
 }
 
-static void reset_tty() {
+static void vi_atexit() {
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+  unlink(vimrc);
 }
 
 static int make_tty_raw() {
@@ -75,7 +80,7 @@ static int make_tty_raw() {
   result = tcgetattr(STDIN_FILENO, &orig_termios);
   if (result == -1) return result;
 
-  result = atexit(reset_tty);
+  result = atexit(vi_atexit);
   if (result == -1) return result;
 
   struct termios raw = orig_termios;
@@ -226,28 +231,20 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
       vi->selecting = true;
     } else if (!strcmp(k->name, "f")) {
       vi->searching = true;
+    } else if (!strcmp(k->name, "v")) {
+      if (vi->searching) {
+        passThrough = false;
+        write0(vi->fd, "\x12");
+        write0(vi->fd, "0");
+      }
     } else if (!strcmp(k->name, "g")) {
       vi->selecting = true;
     } else if (!strcmp(k->name, "q")) {
       passThrough = false;
       write0(vi->fd, "\x1b:q\r");
-    } else if (!strcmp(k->name, "v")) {
+    } else if (!strcmp(k->name, "s")) {
       passThrough = false;
-      if (vi->selecting) {
-        vi->selecting = false;
-        write0(vi->fd, "\"_di");
-      }
-      // For some reason we have to move to the right by one before pasting ^o^
-      get_cursor_pos(&row, &col);
-      if (col > 1) write0(vi->fd, "\x1bOC");
-
-      write0(vi->fd, "\x1bP`]");
-
-      // For some reason we have to move to the right by one after pasting ^o^
-      get_cursor_pos(&row, &col);
-      if (col > 1) write0(vi->fd, "\x1bOC");
-
-      write0(vi->fd, "i");
+      write0(vi->fd, "\x1b:w\rli");
     } else if (!strcmp(k->name, "x")) {
       if (vi->selecting) {
         vi->selecting = false;
@@ -304,12 +301,23 @@ static int vi_drain_stdin(ViState* vi, ReadBuf* stdin_buf) {
   }
 }
 
-int vi_fork(ViState* vi, const char* fname) {
+static int vi_create_vimrc(char* vimrc) {
+  int fd = mkstemp(vimrc);
+  if (fd < 0) return fd;
+
+  write0(fd, vi_rc_string());
+
+  if (close(fd) < 0) return -1;
+}
+
+int vi_fork(ViState* vi, const char* fname, char* vimrc) {
   struct winsize ws;
-  int result;
+  int result; 
 
   result = ioctl(0, TIOCGWINSZ, &ws);
   if (result == -1) return result;
+
+  if (vi_create_vimrc(vimrc) == -1) return -1;
 
   vi->pid = forkpty(&vi->fd, NULL, NULL, &ws);
   if (vi->pid == -1) return -1;
@@ -318,7 +326,7 @@ int vi_fork(ViState* vi, const char* fname) {
     return vi->fd;
   }
 
-  char* const argv[] = { "-n", fname, NULL };
+  char* const argv[] = { "vim", "-S", vimrc, "-c" "startinsert", "-n", fname, NULL };
 
   execvp("vim", argv);
 }
@@ -368,7 +376,7 @@ int main(int argc, char** argv) {
 
   if (make_tty_raw() == -1) return 1;
 
-  fds[1].fd = vi_fork(&vi_state, argv[1]);
+  fds[1].fd = vi_fork(&vi_state, argv[1], vimrc);
   if (fds[1].fd == -1) {
     printf("Failed to spawn vi\r\n");
     return 2;
