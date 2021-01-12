@@ -60,7 +60,7 @@ static int vi_drain(ViState* vi);
 #define write0(fd, str) \
   write((fd), (str), strlen((str)))
 
-#define DEBUG(s)
+#define DEBUG(s) s
 static void debug(const char* fmt, ...) {
   DEBUG(va_list va);
   DEBUG(va_start(va, fmt));
@@ -149,28 +149,6 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
   return false;
 }
 
-static int get_cursor_pos(int* row, int* col) {
-  char response[256] = "";
-  char* end;
-  int idx;
-
-  write0(1, "\x1b[6n");
-
-  // We expect <ESC>[??;???R back, so let's keep reading until we get a letter R.
-  for (idx = 0; idx < 256; idx++) {
-    read(0, &response[idx], 1);
-    if (response[idx] == 'R') break;
-  }
-
-  // This assumes the tty does indeed produce the correct sequence and that the
-  // terminal does not have so many rows/columns that the resulting decimal
-  // representation of the numbers doesn't fit in the buffer ;)
-  *row = strtol(&response[2], &end, 10);
-  end++;
-  *col = strtol(end, NULL, 10);
-  return 0;
-}
-
 static bool vi_process_keystroke(ViState* vi, keystroke* k) {
   int row, col;
   bool passThrough = true;
@@ -185,17 +163,6 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
       !strcmp(k->name, "left") ||
       !strcmp(k->name, "right") ||
       !strcmp(k->name, "end")) {
-    const char* direction =
-      !strcmp(k->name, "up") ? "\x1bOA" :
-      !strcmp(k->name, "down") ? "\x1bOB" :
-      !strcmp(k->name, "right") ? "\x1bOC" :
-      !strcmp(k->name, "left") ? "\x1bOD" :
-      !strcmp(k->name, "end") ? "$" : NULL;
-    bool needs_forwards =
-        (!strcmp(k->name, "down") ||
-        !strcmp(k->name, "right") ||
-        !strcmp(k->name, "left") ||
-        !strcmp(k->name, "end"));
     if (k->shift == true) {
       if (!vi->selecting) {
         vi->selecting = true;
@@ -275,6 +242,12 @@ static void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf) {
     debug("vi->selecting: %s\n", vi->selecting ? "true" : "false");
 
     passThrough = vi_process_keystroke(vi, &k);
+  } else {
+    debug("keystroke not interpreted\n");
+    if (vi->selecting) {
+      vi->selecting = false;
+      write0(vi->fd, "\"_di");
+    }
   }
 
   if (passThrough) {
