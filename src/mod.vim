@@ -2,7 +2,7 @@
 :set expandtab
 :set whichwrap+=<,>,[,],h,l
 :set nohlsearch
-:set list
+":set list
 :set selection=exclusive
 
 " Figure out whether we're on the last character by jumping forward and back
@@ -184,6 +184,14 @@ function! NPasteOver()
     execute "normal! gp"
   else
     execute "normal! gP"
+  endif
+endfunction
+
+function! NMaybeMoveForward()
+  let pos = GetPosInfo()
+
+  if !pos.first && !pos.last
+    execute "normal! l"
   endif
 endfunction
 
