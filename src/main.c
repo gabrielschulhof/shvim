@@ -65,7 +65,7 @@ static int vi_drain(ViState* vi);
 #define write0(fd, str) \
   write((fd), (str), strlen((str)))
 
-#define DEBUG(s)
+#define DEBUG(s) s
 static void debug(const char* fmt, ...) {
   DEBUG(va_list va);
   DEBUG(va_start(va, fmt));
@@ -218,7 +218,7 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
       write0(vi->fd, "\x1b:q\r");
     } else if (!strcmp(k->name, "s")) {
       passThrough = false;
-      write0(vi->fd, "\x1b:w\rli");
+      write0(vi->fd, "\x1b:w\r:call NMaybeMoveForward()\ri");
     } else if (!strcmp(k->name, "v")) {
       if (vi->searching) {
         passThrough = false;
