@@ -245,6 +245,7 @@ vnoremap <C-c> mbomey`bv`eo
 inoremap <C-f> <Esc>l/
 vnoremap <C-f> <Esc>l/
 vnoremap <C-g> <Esc>nmbgn
+inoremap <C-g> <Esc>nmbgn
 inoremap <C-l> <Esc>:
 
 inoremap <C-v> <C-o>:call NPaste()<CR>
