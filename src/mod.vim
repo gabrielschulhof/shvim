@@ -238,7 +238,6 @@ vnoremap <S-home> 0
 vnoremap <home> <Esc>0i
 vnoremap <C-home> <Esc>1G0i
 
-vnoremap <Backspace> "_di
 vnoremap <Delete> "_di
 
 inoremap <C-a> <Esc>:execute "normal! 1G0mbvG$"<CR>

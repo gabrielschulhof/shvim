@@ -134,15 +134,24 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
     result->ctrl = false;
     result->meta = false;
     return true;
-  } else if (buf->offset == 1 &&
-      buf->buf[0] < 0x1e &&
-      ctrl_sequences[buf->buf[0]] != NULL) {
-    result->name = ctrl_sequences[buf->buf[0]];
-    result->shift = false;
-    result->ctrl =
-        (!(buf->buf[0] == 0x1b || buf->buf[0] == 0x0a || buf->buf[0] == 0x0d));
-    result->meta = false;
-    return true;
+  } else if (buf->offset == 1) {
+    if (buf->buf[0] < 0x1e &&
+        ctrl_sequences[buf->buf[0]] != NULL) {
+      result->name = ctrl_sequences[buf->buf[0]];
+      result->shift = false;
+      result->ctrl =
+          (!(buf->buf[0] == 0x1b ||
+             buf->buf[0] == 0x0a ||
+             buf->buf[0] == 0x0d));
+      result->meta = false;
+      return true;
+    } else if (buf->buf[0] == 0x7f) {
+      result->name = "backspace";
+      result->shift = false;
+      result->ctrl = false;
+      result->meta = false;
+      return true;
+    }
   } else if (buf->offset == 4) {
     result->name = "delete";
     result->shift = false;
@@ -158,9 +167,12 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
   int row, col;
   bool passThrough = true;
 
-  if ((!strcmp(k->name, "delete") || !strcmp(k->name, "backspace")) &&
+  if ((!strcmp(k->name, "backspace")) &&
       k->shift == false && k->ctrl == false && vi->selecting) {
+    debug("backspace, turning off selecting\n");
     vi->selecting = false;
+    write0(vi->fd, "\"_di");
+    return false;
   }
 
   if (!strcmp(k->name, "up") ||
