@@ -4,6 +4,7 @@
 :set nohlsearch
 ":set list
 :set selection=exclusive
+:set shiftwidth=2
 
 " Figure out whether we're on the last character by jumping forward and back
 " and checking whether that causes a line change.
