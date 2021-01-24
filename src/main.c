@@ -153,11 +153,29 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
       return true;
     }
   } else if (buf->offset == 4) {
-    result->name = "delete";
-    result->shift = false;
-    result->ctrl = false;
-    result->meta = false;
-    return true;
+    if (buf->buf[0] == 0x1b &&
+        buf->buf[1] == 0x5b &&
+        buf->buf[3] == 0x7e) {
+      if (buf->buf[2] == 0x34) {
+        result->name = "end";
+        result->shift = false;
+        result->ctrl = false;
+        result->meta = false;
+        return true;
+      } else if (buf->buf[2] == 0x31) {
+        result->name = "home";
+        result->shift = false;
+        result->ctrl = false;
+        result->meta = false;
+        return true;
+      } else if (buf->buf[2] == 0x33) {
+        result->name = "delete";
+        result->shift = false;
+        result->ctrl = false;
+        result->meta = false;
+        return true;
+      }
+    }
   }
 
   return false;
