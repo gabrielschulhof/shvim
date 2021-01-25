@@ -170,9 +170,9 @@ endfunction
 function! NPaste()
   let pos = GetPosInfo()
 
-  if !pos.first && !pos.last
-    execute "normal! l"
-  endif
+"  if !pos.first && !pos.last
+"    execute "normal! l"
+"  endif
   if pos.last
     execute "normal! gp"
   else
