@@ -241,6 +241,12 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
       vi->searching = true;
     } else if (!strcmp(k->name, "g")) {
       vi->selecting = true;
+    } else if (!strcmp(k->name, "i")) {
+      if (vi->selecting) {
+        vi->selecting = false;
+        write0(vi->fd, "\"_di");
+        passThrough = true;
+      }
     } else if (!strcmp(k->name, "l")) {
       vi->jumping = true;
     } else if (!strcmp(k->name, "q")) {
