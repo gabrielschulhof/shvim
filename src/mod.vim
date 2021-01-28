@@ -5,6 +5,7 @@
 ":set list
 :set selection=exclusive
 :set shiftwidth=2
+:set colorcolumn=80
 
 " Figure out whether we're on the last character by jumping forward and back
 " and checking whether that causes a line change.
@@ -167,19 +168,6 @@ function! NSHomeDoc()
   execute "normal! mbv1G0"
 endfunction
 
-function! NPaste()
-  let pos = GetPosInfo()
-
-"  if !pos.first && !pos.last
-"    execute "normal! l"
-"  endif
-  if pos.last
-    execute "normal! gp"
-  else
-    execute "normal! gP"
-  endif
-endfunction
-
 function! NPasteOver()
   if GetPosInfo().last
     execute "normal! gp"
@@ -248,7 +236,7 @@ vnoremap <C-g> <Esc>nmbgn
 inoremap <C-g> <Esc>nmbgn
 inoremap <C-l> <Esc>:
 
-inoremap <C-v> <C-o>:call NPaste()<CR>
+inoremap <C-v> <C-Bslash><C-o>P
 vnoremap <C-v> "_d:call NPasteOver()<CR>i
 vnoremap <C-x> di
 inoremap <C-z> <C-o>u
