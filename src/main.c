@@ -238,6 +238,7 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
     if (!strcmp(k->name, "a")) {
       vi->selecting = true;
     } else if (!strcmp(k->name, "f")) {
+      vi->selecting = false;
       vi->searching = true;
     } else if (!strcmp(k->name, "g")) {
       vi->selecting = true;
