@@ -5,7 +5,7 @@
 ":set list
 :set selection=exclusive
 :set shiftwidth=2
-:set colorcolumn=80
+:set colorcolumn=81
 
 " Figure out whether we're on the last character by jumping forward and back
 " and checking whether that causes a line change.
