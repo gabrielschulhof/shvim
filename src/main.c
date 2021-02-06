@@ -261,6 +261,8 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
         passThrough = false;
         write0(vi->fd, "\x12");
         write0(vi->fd, "0");
+      } else {
+        vi->selecting = false;
       }
     } else if (!strcmp(k->name, "x")) {
       if (vi->selecting) {
