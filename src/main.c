@@ -231,6 +231,9 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
       passThrough = false;
       vi->jumping = false;
       write0(vi->fd, "\ri");
+    } else if (vi->selecting) {
+      vi->selecting = false;
+      write0(vi->fd, "\"_di");
     }
   }
 
