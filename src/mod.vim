@@ -226,12 +226,19 @@ vnoremap <S-home> 0
 vnoremap <home> <Esc>0i
 vnoremap <C-home> <Esc>1G0i
 
+inoremap <S-PageUp> <Esc>v<C-b>
+vnoremap <S-PageUp> <C-b>
+
+inoremap <S-PageDown> <Esc>v<C-f>
+vnoremap <S-PageDown> <C-f>
+
 vnoremap <Delete> "_di
 
 inoremap <C-a> <Esc>:execute "normal! 1G0mbvG$"<CR>
 vnoremap <C-c> mbomey`bv`eo
 inoremap <C-f> <Esc>l/
 vnoremap <C-f> <Esc>l/
+nnoremap <C-f> <Esc>l/
 vnoremap <C-g> <Esc>nmbgn
 inoremap <C-g> <Esc>nmbgn
 inoremap <C-l> <Esc>:
