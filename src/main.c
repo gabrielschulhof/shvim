@@ -115,15 +115,28 @@ static int make_tty_raw() {
 static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
   if (buf->offset == 6 &&
       buf->buf[0] == 0x1b &&
-      (buf->buf[4] == 0x32 || buf->buf[4] == 0x35 || buf->buf[4] == 0x36) &&
-      (IS_UDLREH(buf, 5) || buf->buf[5] == 0x7e)) {
-    // [Ctrl +] Shift + <arrow|home|end>
-    result->name =
-        ((buf->buf[5] == 0x7e) ? "delete" : UDLREH_TO_NAME(buf->buf[5]));
-    result->shift = (buf->buf[4] != 0x35);
-    result->ctrl = (buf->buf[4] == 0x36 || buf->buf[4] == 0x35);
-    result->meta = false;
-    return true;
+      buf->buf[1] == 0x5b) {
+    if (buf->buf[2] == 0x31) {
+      if ((buf->buf[4] == 0x32 || buf->buf[4] == 0x35 || buf->buf[4] == 0x36) &&
+          (IS_UDLREH(buf, 5) || buf->buf[5] == 0x7e)) {
+        // [Ctrl +] Shift + <arrow|home|end>
+        result->name =
+            ((buf->buf[5] == 0x7e) ? "delete" : UDLREH_TO_NAME(buf->buf[5]));
+        result->shift = (buf->buf[4] != 0x35);
+        result->ctrl = (buf->buf[4] == 0x36 || buf->buf[4] == 0x35);
+        result->meta = false;
+        return true;
+      }
+    } else if (buf->buf[2] == 0x35 ||
+        buf->buf[2] == 0x36) {
+      if (buf->buf[5] == 0x7e) {
+        result->name = buf->buf[2] == 0x35 ? "pageup" : "pagedown";
+        result->shift = (buf->buf[4] != 0x35);
+        result->ctrl = (buf->buf[4] == 0x36 || buf->buf[4] == 0x35);
+        result->meta = false;
+        return true;
+      }
+    }
   } else if (buf->offset == 3 &&
       buf->buf[0] == 0x1b &&
       buf->buf[1] == 0x4f &&
