@@ -110,10 +110,31 @@ static int make_tty_raw() {
       (ch) == 0x44 ? "left" :        \
       (ch) == 0x46 ? "end" : "home")
 
+static bool keystroke_complete(ReadBuf* buf) {
+  if (buf->offset >= 1) {
+    if (buf->buf[0] == 0x1b) {
+      if (buf->offset >= 2) {
+        if (buf->buf[1] == 0x4f) {
+          return (buf->offset >= 3);
+        } else if (buf->buf[1] == 0x5b) {
+          if (buf->offset < 4) {
+            return false;
+          } else {
+            if (buf->buf[2] == 0x3b) {
+              return (buf->offset >= 6);
+            }
+          }
+        }
+      }
+    }
+  }
+  return true;
+}
+
 // Produce a keystroke from an input escape sequence. This is not an exhaustive
 // interpreter.
 static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
-  if (buf->offset == 6 &&
+  if (buf->offset >= 6 &&
       buf->buf[0] == 0x1b &&
       buf->buf[1] == 0x5b) {
     if (buf->buf[2] == 0x31) {
@@ -137,35 +158,7 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
         return true;
       }
     }
-  } else if (buf->offset == 3 &&
-      buf->buf[0] == 0x1b &&
-      buf->buf[1] == 0x4f &&
-      IS_UDLREH(buf, 2)) {
-    // <arrow|home|end>
-    result->name = UDLREH_TO_NAME(buf->buf[2]);
-    result->shift = false;
-    result->ctrl = false;
-    result->meta = false;
-    return true;
-  } else if (buf->offset == 1) {
-    if (buf->buf[0] < 0x1e &&
-        ctrl_sequences[buf->buf[0]] != NULL) {
-      result->name = ctrl_sequences[buf->buf[0]];
-      result->shift = false;
-      result->ctrl =
-          (!(buf->buf[0] == 0x1b ||
-             buf->buf[0] == 0x0a ||
-             buf->buf[0] == 0x0d));
-      result->meta = false;
-      return true;
-    } else if (buf->buf[0] == 0x7f) {
-      result->name = "backspace";
-      result->shift = false;
-      result->ctrl = false;
-      result->meta = false;
-      return true;
-    }
-  } else if (buf->offset == 4) {
+  } else if (buf->offset >= 4) {
     if (buf->buf[0] == 0x1b &&
         buf->buf[1] == 0x5b &&
         buf->buf[3] == 0x7e) {
@@ -189,6 +182,37 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
         return true;
       }
     }
+  } else if (buf->offset >= 3 &&
+      buf->buf[0] == 0x1b &&
+      buf->buf[1] == 0x4f &&
+      IS_UDLREH(buf, 2)) {
+    // <arrow|home|end>
+    result->name = UDLREH_TO_NAME(buf->buf[2]);
+    result->shift = false;
+    result->ctrl = false;
+    result->meta = false;
+    return true;
+  } else if (buf->offset >= 1) {
+    if (buf->buf[0] < 0x1e &&
+        ctrl_sequences[buf->buf[0]] != NULL) {
+      result->name = ctrl_sequences[buf->buf[0]];
+      result->shift = false;
+      result->ctrl =
+          (!(buf->buf[0] == 0x1b ||
+             buf->buf[0] == 0x0a ||
+             buf->buf[0] == 0x0d));
+      result->meta = false;
+      return true;
+    } else if (buf->buf[0] == 0x7f) {
+      result->name = "backspace";
+      result->shift = false;
+      result->ctrl = false;
+      result->meta = false;
+      return true;
+    }
+  } else if (!keystroke_complete(buf)) {
+    debug("incomplete\n");
+    return true;
   }
 
   return false;
