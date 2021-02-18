@@ -19,8 +19,6 @@
 
 static struct termios orig_termios;
 
-static char vimrc[] = "/tmp/shvim.vimrc.XXXXXX";
-
 extern const char* vi_rc_string();
 
 typedef struct {
@@ -33,18 +31,20 @@ typedef struct {
   pid_t pid;
   bool selecting;
   bool searching;
-  bool jumping
+  bool jumping;
+  char vimrc[24];
 } ViState;
 
 ViState* current_vi = NULL;
 
-#define VI_STATE_INIT \
-  {                   \
-    -1,               \
-    -1,               \
-    false,            \
-    false,            \
-    false             \
+#define VI_STATE_INIT         \
+  {                           \
+    -1,                       \
+    -1,                       \
+    false,                    \
+    false,                    \
+    false,                    \
+    "/tmp/shvim.vimrc.XXXXXX" \
   }
 
 typedef struct {
@@ -60,8 +60,6 @@ static const char* ctrl_sequences[] = {
   "escape", NULL, NULL, "~",
 };
 
-static int vi_drain(ViState* vi);
-
 #define write0(fd, str) \
   write((fd), (str), strlen((str)))
 
@@ -76,26 +74,6 @@ static void debug(const char* fmt, ...) {
 
 static void vi_atexit() {
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
-  unlink(vimrc);
-}
-
-static int make_tty_raw() {
-  int result;
-
-  result = tcgetattr(STDIN_FILENO, &orig_termios);
-  if (result == -1) return result;
-
-  result = atexit(vi_atexit);
-  if (result == -1) return result;
-
-  struct termios raw = orig_termios;
-
-  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-  raw.c_oflag &= ~(OPOST);
-  raw.c_cflag |= (CS8);
-  raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-
-  return tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
 #define IS_UDLREH(buf, idx)                                    \
@@ -375,14 +353,14 @@ static int vi_create_vimrc(char* vimrc) {
   if (close(fd) < 0) return -1;
 }
 
-int vi_fork(ViState* vi, const char* fname, char* vimrc) {
+int vi_fork(ViState* vi, const char* fname) {
   struct winsize ws;
   int result; 
 
   result = ioctl(0, TIOCGWINSZ, &ws);
   if (result == -1) return result;
 
-  if (vi_create_vimrc(vimrc) == -1) return -1;
+  if (vi_create_vimrc(vi->vimrc) == -1) return -1;
 
   vi->pid = forkpty(&vi->fd, NULL, NULL, &ws);
   if (vi->pid == -1) return -1;
@@ -391,7 +369,7 @@ int vi_fork(ViState* vi, const char* fname, char* vimrc) {
     return vi->fd;
   }
 
-  char* const argv[] = { "vim", "-S", vimrc, "-c" "startinsert", "-n", fname, NULL };
+  char* const argv[] = { "vim", "-S", vi->vimrc, "-c" "startinsert", "-n", fname, NULL };
 
   execvp("vim", argv);
 }
@@ -408,6 +386,7 @@ static int vi_drain(ViState* vi) {
   // EOF from vi, meaning it exited.
   if (vi_avail == 0) {
     debug("EOF from vim, exiting\n");
+    unlink(vi->vimrc);
     exit(0);
   }
 
@@ -434,6 +413,25 @@ static void handle_sigwinch(int signal) {
 
   result = ioctl(current_vi->fd, TIOCSWINSZ, &ws);
   if (result == -1) exit(1);
+}
+
+static int make_tty_raw() {
+  int result;
+
+  result = tcgetattr(STDIN_FILENO, &orig_termios);
+  if (result == -1) return result;
+
+  result = atexit(vi_atexit);
+  if (result == -1) return result;
+
+  struct termios raw = orig_termios;
+
+  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  raw.c_oflag &= ~(OPOST);
+  raw.c_cflag |= (CS8);
+  raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+
+  return tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
 int main(int argc, char** argv) {
@@ -466,7 +464,7 @@ int main(int argc, char** argv) {
 
   current_vi = &vi_state;
 
-  fds[1].fd = vi_fork(&vi_state, argv[1], vimrc);
+  fds[1].fd = vi_fork(&vi_state, argv[1]);
   if (fds[1].fd == -1) {
     printf("Failed to spawn vi\r\n");
     return 2;
