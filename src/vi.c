@@ -1,3 +1,4 @@
+#include "debug.h"
 #include "vi.h"
 
 extern const char* vi_rc_string();
