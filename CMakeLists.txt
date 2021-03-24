@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.5.1)
 project(shvim)
 add_executable(shvim src/main.c src/debug.c src/vi.c ${CMAKE_CURRENT_BINARY_DIR}/mod.vim.c)
 add_custom_command(
