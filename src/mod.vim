@@ -243,6 +243,7 @@ inoremap <C-f> <Esc>l/
 vnoremap <C-f> <Esc>l/
 nnoremap <C-f> <Esc>l/
 vnoremap <C-g> <Esc>nmbgn
+nnoremap <C-g> <Esc>nmbgn
 inoremap <C-g> <Esc>nmbgn
 inoremap <C-l> <Esc>:
 
