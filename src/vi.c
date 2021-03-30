@@ -143,12 +143,15 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
   int row, col;
   bool passThrough = true;
 
-  if ((!strcmp(k->name, "backspace")) &&
+  if ((!strcmp(k->name, "backspace") || !strcmp(k->name, "delete")) &&
       k->shift == false && k->ctrl == false && vi->selecting) {
-    debug("backspace, turning off selecting\n");
+    debug("backspace or delete, turning off selecting\n");
     vi->selecting = false;
-    write0(vi->fd, "\"_di");
-    return false;
+    if (!strcmp(k->name, "backspace")) {
+      write0(vi->fd, "\"_di");
+      return false;
+    }
+    return true;
   }
 
   if (!strcmp(k->name, "up") ||
