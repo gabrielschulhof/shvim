@@ -8,6 +8,7 @@
 :set colorcolumn=81
 :set autoindent
 :set clipboard^=unnamedplus
+:set ve+=onemore
 
 " Figure out whether we're on the last character by jumping forward and back
 " and checking whether that causes a line change.
