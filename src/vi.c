@@ -174,8 +174,10 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
       keystroke shift_left = { "left", true, false, false };
       vi_process_keystroke(vi, &shift_left);
     } else {
-      vi->selecting = false;
-      write0(vi->fd, "\x1bi");
+      if (!vi->searching) {
+        vi->selecting = false;
+        write0(vi->fd, "\x1bi");
+      }
     }
   }
 
