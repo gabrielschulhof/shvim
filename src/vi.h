@@ -29,7 +29,7 @@ typedef struct {
 } ViState;
 
 typedef struct {
-  char buf[BUF_SIZE];
+  unsigned char buf[BUF_SIZE];
   size_t offset;
 } ReadBuf;
 
