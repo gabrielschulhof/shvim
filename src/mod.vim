@@ -253,3 +253,6 @@ vnoremap <C-x> di
 inoremap <C-z> <C-o>u
 nnoremap <C-z> <Esc>ui
 inoremap <C-y> <C-o><C-r>
+
+vnoremap > >gv
+vnoremap < <gv

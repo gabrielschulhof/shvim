@@ -11,9 +11,9 @@ typedef struct {
 } keystroke;
 
 static const char* ctrl_sequences[] = {
-  "`", "a", "b", "c", "d", "e", "f", "g", "h", "i", "return", "k", "l", "enter", "n",
-  "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
-  "escape", NULL, NULL, "~",
+  "`", "a", "b", "c", "d", "e", "f", "g", "h", "i", "return", "k", "l", "enter",
+  "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "escape",
+  NULL, NULL, "~",
 };
 
 #define write0(fd, str) \
@@ -130,6 +130,12 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
       result->ctrl = false;
       result->meta = false;
       return true;
+    } else if (buf->buf[0] == 0x3c || buf->buf[0] == 0x3e) {
+      result->name = (buf->buf[0] == 0x3c ? "<" : ">");
+      result->shift = false;
+      result->ctrl = false;
+      result->meta = false;
+      return true;
     }
   } else if (!keystroke_complete(buf)) {
     debug("incomplete\n");
@@ -152,6 +158,12 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
       return false;
     }
     return true;
+  }
+
+  if (!strcmp(k->name, ">") || !strcmp(k->name, "<")) {
+    if (vi->selecting == true) {
+      return true;
+    }
   }
 
   if (!strcmp(k->name, "up") ||
