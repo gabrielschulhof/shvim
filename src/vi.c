@@ -4,7 +4,7 @@
 extern const char* vi_rc_string();
 
 typedef struct {
-  char* name;
+  const char* name;
   bool shift;
   bool ctrl;
   bool meta;
@@ -148,6 +148,11 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
 static bool vi_process_keystroke(ViState* vi, keystroke* k) {
   int row, col;
   bool passThrough = true;
+
+  if (!strcmp(k->name, "o") && k->shift == false && k->ctrl == true) {
+    write0(vi->fd, "\x1b:tabedit ");
+    return false;
+  }
 
   if ((!strcmp(k->name, "backspace") || !strcmp(k->name, "delete")) &&
       k->shift == false && k->ctrl == false && vi->selecting) {
@@ -329,7 +334,8 @@ int vi_fork(ViState* vi, const char* fname) {
     return vi->fd;
   }
 
-  char* const argv[] = { "vim", "-S", vi->vimrc, "-c" "startinsert", "-n", fname, NULL };
+  char* argv[] =
+      { "vim", "-S", vi->vimrc, "-c" "startinsert", "-n", fname, NULL };
 
   execvp("vim", argv);
 }
