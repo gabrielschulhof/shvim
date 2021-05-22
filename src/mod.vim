@@ -11,6 +11,7 @@
 :set ve+=onemore
 :set showtabline=2
 :set title
+:set wildmode=longest,list
 
 " Figure out whether we're on the last character by jumping forward and back
 " and checking whether that causes a line change.
