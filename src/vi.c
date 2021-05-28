@@ -54,7 +54,9 @@ static bool keystroke_complete(ReadBuf* buf) {
 
 // Produce a keystroke from an input escape sequence. This is not an exhaustive
 // interpreter.
-static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
+static bool
+interpret_keystroke(ReadBuf* buf, keystroke* result, bool* incomplete) {
+  *incomplete = false;
   if (buf->offset >= 6 &&
       buf->buf[0] == 0x1b &&
       buf->buf[1] == 0x5b) {
@@ -80,6 +82,20 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
       }
     }
   } else if (buf->offset >= 4) {
+    if ((buf->offset == 4 &&
+        buf->buf[0] == 0x1b &&
+        buf->buf[1] == 0x5b &&
+        buf->buf[2] == 0x31 &&
+        buf->buf[3] == 0x3b) ||
+        (buf->offset == 5 &&
+        buf->buf[0] == 0x1b &&
+        buf->buf[1] == 0x5b &&
+        buf->buf[2] == 0x31 &&
+        buf->buf[3] == 0x3b &&
+        buf->buf[4] == 0x32)) {
+      *incomplete = true;
+      return true;
+    }
     if (buf->buf[0] == 0x1b &&
         buf->buf[1] == 0x5b &&
         buf->buf[3] == 0x7e) {
@@ -96,7 +112,7 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
         result->meta = false;
         return true;
       } else if (buf->buf[2] == 0x33) {
-        result->name = "delete";
+        result->name = "delete6";
         result->shift = false;
         result->ctrl = false;
         result->meta = false;
@@ -114,6 +130,16 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
     result->meta = false;
     return true;
   } else if (buf->offset >= 1) {
+    if ((buf->offset == 2 &&
+        buf->buf[0] == 0x1b &&
+        buf->buf[1] == 0x5b) ||
+        (buf->offset == 3 &&
+        buf->buf[0] == 0x1b &&
+        buf->buf[1] == 0x5b &&
+        buf->buf[2] == 0x31)) {
+      *incomplete = true;
+      return true;
+    }
     if (buf->buf[0] < 0x1e &&
         ctrl_sequences[buf->buf[0]] != NULL) {
       result->name = ctrl_sequences[buf->buf[0]];
@@ -139,6 +165,7 @@ static bool interpret_keystroke(ReadBuf* buf, keystroke* result) {
     }
   } else if (!keystroke_complete(buf)) {
     debug("incomplete\n");
+    *incomplete = true;
     return true;
   }
 
@@ -259,6 +286,7 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
 
 static void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf) {
   bool passThrough = true;
+  bool incomplete = true;
   keystroke k;
 
   for (int idx = 0; idx < stdin_buf->offset; idx++)
@@ -267,7 +295,11 @@ static void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf) {
         ((idx == stdin_buf->offset - 1) ? "" : " "));
   debug("\n");
 
-  if (interpret_keystroke(stdin_buf, &k)) {
+  if (interpret_keystroke(stdin_buf, &k, &incomplete)) {
+    if (incomplete) {
+        debug("incomplete\n");
+        return;
+    }
     debug("keystroke: %s%s%s%s\n",
       k.ctrl ? "Ctrl+" : "",
       k.meta ? "Alt+" : "",
