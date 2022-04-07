@@ -242,9 +242,9 @@ vnoremap <Delete> "_di
 
 inoremap <C-a> <Esc>:execute "normal! 1G0mbvG$"<CR>
 vnoremap <C-c> mbomey`bv`eo
-inoremap <C-f> <Esc>l/
-vnoremap <C-f> <Esc>l/
-nnoremap <C-f> <Esc>l/
+inoremap <C-f> <Esc>l/\v
+vnoremap <C-f> <Esc>l/\v
+nnoremap <C-f> <Esc>l/\v
 vnoremap <C-g> <Esc>nmbgn
 nnoremap <C-g> <Esc>nmbgn
 inoremap <C-g> <Esc>nmbgn

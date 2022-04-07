@@ -3,11 +3,22 @@
 SOURCE="$1"
 DEST="$2"
 
-echo "const char* vi_rc_string() { return" > "${DEST}"
+cat "${SOURCE}" | awk '
+BEGIN {
+    print("const char *vi_rc_string() { return");
+}
 
-cat "${SOURCE}" | while read; do
+{
+    line = $0;
+    if (substr(line, 1, 1) != "\"")
+    {
+        gsub(/\\/, "\\\\", line);
+        gsub(/"/, "\\\"", line);
+        print("\"" line  "\\n\"");
+    }
+}
 
-  echo "\"$(echo "${REPLY}" | sed 's/"/\\"/g')\\n\"" >> "${DEST}"
-done
-
-echo ";}" >> "${DEST}"
+END {
+    print(";}");
+}
+' > "${DEST}"
