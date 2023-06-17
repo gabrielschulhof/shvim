@@ -284,7 +284,7 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
   return passThrough;
 }
 
-static void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf) {
+void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf) {
   bool passThrough = true;
   bool incomplete = true;
   keystroke k;
@@ -332,70 +332,20 @@ static int vi_create_vimrc(char* vimrc) {
   if (close(fd) < 0) return -1;
 }
 
-int vi_drain_stdin(ViState* vi, ReadBuf* stdin_buf) {
-  int result;
-  int stdin_avail = -1;
-  ssize_t stdin_read = -1;
-
-  result = ioctl(0, FIONREAD, &stdin_avail);
-  if (result == -1) return result;
-
-  while (stdin_avail > 0) {
-    stdin_read = read(0, &stdin_buf->buf[stdin_buf->offset],
-      BUF_SIZE - stdin_buf->offset);
-    if (stdin_read < 0) return stdin_read;
-    stdin_avail -= stdin_read;
-    stdin_buf->offset += stdin_read;
-    vi_process_stdin(vi, stdin_buf);
-  }
-}
-
-int vi_fork(ViState* vi, const char* fname) {
-  struct winsize ws;
+int vi_fork(ViState* vi, char* fname, struct winsize* ws) {
   int result; 
-
-  result = ioctl(0, TIOCGWINSZ, &ws);
-  if (result == -1) return result;
 
   if (vi_create_vimrc(vi->vimrc) == -1) return -1;
 
-  vi->pid = forkpty(&vi->fd, NULL, NULL, &ws);
+  vi->pid = forkpty(&vi->fd, NULL, NULL, ws);
   if (vi->pid == -1) return -1;
 
   if (vi->pid > 0) {
-    return vi->fd;
+    return 0;
   }
 
   char* argv[] =
       { "vim", "-S", vi->vimrc, "-c" "startinsert", "-n", fname, NULL };
 
   execvp("vim", argv);
-}
-
-int vi_drain(ViState* vi) {
-  char buf[BUF_SIZE] = "";
-  int result;
-  int vi_avail = -1;
-  ssize_t vi_read = -1;
-
-  result = ioctl(vi->fd, FIONREAD, &vi_avail);
-  if (result == -1) return result;
-
-  // EOF from vi, meaning it exited.
-  if (vi_avail == 0) {
-    debug("EOF from vim, exiting\n");
-    unlink(vi->vimrc);
-    exit(0);
-  }
-
-  while(vi_avail > 0) {
-    vi_read = read(vi->fd, buf, BUF_SIZE);
-    if (vi_read < 0) return vi_read;
-    if (write(1, buf, vi_read) < 0) {
-      return -1;
-    }
-    vi_avail -= vi_read;
-  }
-
-  return 0;
 }

@@ -16,8 +16,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pty.h>
+#include <uv.h>
 
-#define BUF_SIZE 256
+#define BUF_SIZE 65536
 
 typedef struct {
   int fd;
@@ -43,10 +44,8 @@ typedef struct {
     "/tmp/shvim.vimrc.XXXXXX" \
   }
 
-int vi_fork(ViState* vi, const char* fname);
+int vi_fork(ViState* vi, char* fname, struct winsize* ws);
 
-int vi_drain_stdin(ViState* vi, ReadBuf* stdin_buf);
-
-int vi_drain(ViState* vi);
+void vi_process_stdin(ViState* vi, ReadBuf* stdin_buf);
 
 #endif  // _SRC_VI_H_

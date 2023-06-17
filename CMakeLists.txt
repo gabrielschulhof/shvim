@@ -8,4 +8,5 @@ add_custom_command(
   COMMENT "Compiling mod.vim"
 )
 target_link_libraries(shvim PUBLIC util)
+target_link_libraries(shvim PUBLIC uv)
 target_include_directories(shvim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

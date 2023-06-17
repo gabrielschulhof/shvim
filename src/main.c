@@ -1,96 +1,120 @@
+#include <stdlib.h>
 #include "debug.h"
 #include "vi.h"
 
-static struct termios orig_termios;
+#define PARENT_STRUCT_PTR(child_ptr, struct_type, member) \
+  ((struct_type*)(((char*)child_ptr) - offsetof(struct_type, member)))
 
-ViState* current_vi = NULL;
+#define UV_CALL(call) \
+  do { \
+    if ((call) != 0) { \
+      debug(#call " failed\n"); \
+      abort(); \
+    } \
+  } while (0)
 
-static void handle_sigwinch(int signal) {
-  int result;
+typedef struct {
+  uv_pipe_t pipe;
+  ReadBuf buf;
+} buffered_pipe_t;
+
+typedef struct {
+  ViState vi_state;
+  uv_loop_t loop;
+  uv_tty_t tty;
+  uv_signal_t sigwinch;
+  buffered_pipe_t std_in;
+  buffered_pipe_t vi;
+} app_state_t;
+
+static int uv_tty_get_ws(uv_tty_t* tty, struct winsize* ws) {
+  int width, height;
+  int result = uv_tty_get_winsize(tty, &width, &height);
+  if (result == 0) {
+    ws->ws_col = width;
+    ws->ws_row = height;
+  }
+  return result;
+}
+
+static void handle_sigwinch(uv_signal_t* handle, int signal) {
+  app_state_t* app = PARENT_STRUCT_PTR(handle, app_state_t, sigwinch);
   struct winsize ws;
 
   debug("sigwinch\n");
 
-  result = ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
-  if (result == -1) exit(1);
-
-  result = ioctl(current_vi->fd, TIOCSWINSZ, &ws);
-  if (result == -1) exit(1);
+  UV_CALL(uv_tty_get_ws(&app->tty, &ws));
+  debug("new windows size: %d, %d\n", ws.ws_col, ws.ws_row);
+  UV_CALL(ioctl(app->vi_state.fd, TIOCSWINSZ, &ws));
 }
 
-static void vi_atexit() {
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+static void buffered_pipe_alloc_cb(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
+  buffered_pipe_t* uv_buf = (buffered_pipe_t*)handle;
+  buf->base = &uv_buf->buf.buf[uv_buf->buf.offset];
+  buf->len = BUF_SIZE - uv_buf->buf.offset;
 }
 
-static int make_tty_raw() {
-  int result;
+static void stdin_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
+  app_state_t* app = PARENT_STRUCT_PTR(stream, app_state_t, std_in);
+  debug("stdin_read_cb: %zd vs. UV_EOF: %zu\n", nread, UV_EOF);
+  if (nread > 0) {
+    debug("read from stdin: offset %zu + new bytes %zd available\n", app->std_in.buf.offset, nread);
+    app->std_in.buf.offset += nread;
+    vi_process_stdin(&app->vi_state, &app->std_in.buf);
+  }
+}
 
-  result = tcgetattr(STDIN_FILENO, &orig_termios);
-  if (result == -1) return result;
+static void clean_up_uv(app_state_t* app) {
+  debug("clean_up_uv\n");
+  UV_CALL(uv_tty_reset_mode());
+  uv_close((uv_handle_t*)&app->tty, NULL);
+  uv_close((uv_handle_t*)&app->sigwinch, NULL);
+  uv_close((uv_handle_t*)&app->std_in, NULL);
+  uv_close((uv_handle_t*)&app->vi, NULL);
+  debug("clean_up_uv complete\n");
+}
 
-  result = atexit(vi_atexit);
-  if (result == -1) return result;
-
-  struct termios raw = orig_termios;
-
-  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-  raw.c_oflag &= ~(OPOST);
-  raw.c_cflag |= (CS8);
-  raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-
-  return tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+static void vi_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
+  app_state_t* app = PARENT_STRUCT_PTR(stream, app_state_t, vi);
+  debug("read from vi: %zd\n", nread);
+  if (nread > 0) {
+    write(1, app->vi.buf.buf, nread);
+    app->vi.buf.offset = 0;
+  } else if (nread < 0) {
+    clean_up_uv(app);
+  }
 }
 
 int main(int argc, char** argv) {
-  int result;
-  ViState vi_state = VI_STATE_INIT;
-
-  struct pollfd fds[2] = {
-    { 0, POLLIN, 0 },
-    { -1, POLLIN, 0 },
-  };
-
-  ReadBuf stdin_buf = { "", 0 };
-
-  DEBUG(freopen("/home/nix/shvim/log", "a", stderr));
-
-  debug("\nStarting up\n");
+  struct winsize ws;
+  app_state_t app = {VI_STATE_INIT};
+  app.std_in.buf.offset = 0;
+  app.vi.buf.offset = 0;
 
   if (argc < 2) {
     printf("Need a file name\n");
     return 1;
   }
 
-  if (make_tty_raw() == -1) return 1;
+  DEBUG(freopen("/home/nix/shvim/log", "a", stderr));
 
-  struct sigaction sa;
-  if (sigemptyset(&sa.sa_mask) == -1) return 1;
-  sa.sa_flags = 0;
-  sa.sa_handler = handle_sigwinch;
-  if (sigaction(SIGWINCH, &sa, NULL) == -1) return 1;
+  debug("\nStarting up\n");
 
-  current_vi = &vi_state;
+  UV_CALL(uv_loop_init(&app.loop));
+  UV_CALL(uv_tty_init(&app.loop, &app.tty, STDIN_FILENO, 0));
+  UV_CALL(uv_signal_init(&app.loop, &app.sigwinch));
+  UV_CALL(uv_signal_start(&app.sigwinch, handle_sigwinch, SIGWINCH));
+  UV_CALL(uv_pipe_init(&app.loop, &app.std_in.pipe, 0));
+  UV_CALL(uv_pipe_open(&app.std_in.pipe, 0));
+  UV_CALL(uv_read_start((uv_stream_t*)&app.std_in.pipe, buffered_pipe_alloc_cb, stdin_read_cb));
+  UV_CALL(uv_tty_set_mode(&app.tty, UV_TTY_MODE_RAW));
+  UV_CALL(uv_tty_get_ws(&app.tty, &ws));
+  UV_CALL(vi_fork(&app.vi_state, argv[1], &ws));
+  UV_CALL(uv_pipe_init(&app.loop, &app.vi.pipe, 0));
+  UV_CALL(uv_pipe_open(&app.vi.pipe, app.vi_state.fd));
+  UV_CALL(uv_read_start((uv_stream_t*)&app.vi.pipe, buffered_pipe_alloc_cb, vi_read_cb));
 
-  fds[1].fd = vi_fork(&vi_state, argv[1]);
-  if (fds[1].fd == -1) {
-    printf("Failed to spawn vi\r\n");
-    return 2;
-  }
-
-  while (true) {
-    result = ppoll(fds, sizeof(fds) / sizeof(*fds), NULL, NULL);
-    if (result >= 0) {
-      if (fds[0].revents != 0) {
-        fds[0].revents = 0;
-        vi_drain_stdin(&vi_state, &stdin_buf);
-      } else if (fds[1].revents != 0) {
-        fds[1].revents = 0;
-        vi_drain(&vi_state);
-      }
-    } else if (errno != EINTR) {
-      break;
-    }
-  }
+  while(uv_run(&app.loop, UV_RUN_ONCE));
 
   return 0;
 }
