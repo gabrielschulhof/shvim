@@ -330,6 +330,7 @@ static int vi_create_vimrc(char* vimrc) {
   write0(fd, vi_rc_string());
 
   if (close(fd) < 0) return -1;
+  return 0;
 }
 
 int vi_fork(ViState* vi, char* fname, struct winsize* ws) {
@@ -347,5 +348,5 @@ int vi_fork(ViState* vi, char* fname, struct winsize* ws) {
   char* argv[] =
       { "vim", "-S", vi->vimrc, "-c" "startinsert", "-n", fname, NULL };
 
-  execvp("vim", argv);
+  return execvp("vim", argv);
 }

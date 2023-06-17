@@ -15,7 +15,11 @@
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef __APPLE__
+#include <util.h>
+#else
 #include <pty.h>
+#endif  // __APPLE__
 #include <uv.h>
 
 #define BUF_SIZE 65536
@@ -30,7 +34,7 @@ typedef struct {
 } ViState;
 
 typedef struct {
-  unsigned char buf[BUF_SIZE];
+  char buf[BUF_SIZE];
   size_t offset;
 } ReadBuf;
 
