@@ -3,9 +3,11 @@
 #include "debug.h"
 
 void debug(const char* fmt, ...) {
+  FILE* pfile = fopen("/Users/gschulhof/dev/shvim/log", "a");
   DEBUG(va_list va);
   DEBUG(va_start(va, fmt));
-  DEBUG(vfprintf(stderr, fmt, va));
-  DEBUG(fflush(stderr));
+  DEBUG(vfprintf(pfile, fmt, va));
+  DEBUG(fflush(pfile));
   DEBUG(va_end(va));
+  fclose(pfile);
 }

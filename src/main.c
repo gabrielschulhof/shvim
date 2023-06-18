@@ -96,8 +96,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  DEBUG(freopen("/home/nix/shvim/log", "a", stderr));
-
   debug("\nStarting up\n");
 
   UV_CALL(uv_loop_init(&app.loop));
