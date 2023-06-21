@@ -140,6 +140,19 @@ interpret_keystroke(ReadBuf* buf, keystroke* result, bool* incomplete) {
       *incomplete = true;
       return true;
     }
+    debug("buf->offset: %d\n", buf->offset);
+    debug("buf->buf[0] = 0x%02x\n", buf->buf[0]);
+    debug("buf->buf[1] = 0x%02x\n", buf->buf[1]);
+    if (buf->offset == 2 &&
+        buf->buf[0] == 0x1b && (
+          buf->buf[1] == 0x62 ||
+          buf->buf[1] == 0x66)) {
+      result->name = buf->buf[1] == 0x62 ? "left" : "right";
+      result->shift = false;
+      result->ctrl = true;
+      result->meta = false;
+      return true;
+    }
     if (buf->buf[0] < 0x1e &&
         ctrl_sequences[buf->buf[0]] != NULL) {
       result->name = ctrl_sequences[buf->buf[0]];
@@ -213,6 +226,12 @@ static bool vi_process_keystroke(ViState* vi, keystroke* k) {
       vi->selecting = false;
       write0(vi->fd, "\x1bi");
       passThrough = true;
+    }
+    if ((!strcmp(k->name, "left") ||
+        !strcmp(k->name, "right") &&
+        k->ctrl == true && k->shift == false && k->meta == false)) {
+      write0(vi->fd, !strcmp(k->name, "left") ? "\x1b[1;5D" : "\x1b[1;5C");
+      passThrough = false;
     }
   }
 
